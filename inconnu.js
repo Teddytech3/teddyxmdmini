@@ -20,7 +20,7 @@ const {
     incrementStats,
     isSudo,
     isBanned,
-    deleteSessionFromMongoDB // Make sure this exists in database.js
+    deleteSessionFromMongoDB
 } = require('./lib/database');
 
 const path = require('path');
@@ -121,18 +121,24 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 }
 
 // ================= START BOT =================
-async function startBot(number, res = null, forceNewSession = false) {
+async function startBot(number, res = null, forceNew = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
 
     try {
-        // If forcing new session, clear old one first
-        if (forceNewSession) {
-            console.log(`⚡ Clearing old session for ${sanitizedNumber}`);
+        // CLEAR OLD SESSION IF FORCE NEW
+        if (forceNew) {
+            console.log(`⚡ TEDDY-XMD: Clearing old session for ${sanitizedNumber}`);
+
+            // 1. Delete from MongoDB
             await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+
+            // 2. Delete local folder
             if (fs.existsSync(sessionDir)) {
                 fs.removeSync(sessionDir);
             }
+
+            // 3. Close existing socket
             if (activeSockets.has(sanitizedNumber)) {
                 try {
                     const oldSocket = activeSockets.get(sanitizedNumber);
@@ -141,10 +147,12 @@ async function startBot(number, res = null, forceNewSession = false) {
                 } catch {}
                 activeSockets.delete(sanitizedNumber);
             }
+
+            await delay(1000);
         }
 
         const existingSession = await getSessionFromMongoDB(sanitizedNumber);
-        if (existingSession &&!forceNewSession) {
+        if (existingSession &&!forceNew) {
             fs.ensureDirSync(sessionDir);
             fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
         }
@@ -157,7 +165,7 @@ async function startBot(number, res = null, forceNewSession = false) {
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
             },
             printQRInTerminal: false,
-            usePairingCode:!existingSession || forceNewSession,
+            usePairingCode:!existingSession || forceNew,
             browser: Browsers.macOS('Safari'),
             logger: pino({ level: 'silent' })
         });
@@ -180,21 +188,18 @@ async function startBot(number, res = null, forceNewSession = false) {
 
                 // ================= AUTO FOLLOW NEWSLETTER & JOIN GROUP =================
                 try {
-                    // 1. AUTO FOLLOW NEWSLETTER - set in config.js
                     const newsletterId = config.NEWSLETTER_JID || "120363421104812135@newsletter";
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         await conn.newsletterFollow(newsletterId);
                         console.log(`✅ TEDDY-XMD Auto-followed newsletter`);
                     }
 
-                    // 2. AUTO JOIN GROUP - set in config.js
                     const groupInvite = config.AUTO_JOIN_GROUP || '';
                     if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
                         const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
                         await conn.groupAcceptInvite(inviteCode);
                         console.log(`✅ TEDDY-XMD Auto-joined group`);
                     }
-
                 } catch (e) {
                     console.log('❌ Auto join error:', e.message);
                 }
@@ -204,7 +209,10 @@ async function startBot(number, res = null, forceNewSession = false) {
                 const code = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = code!== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
-                else activeSockets.delete(sanitizedNumber);
+                else {
+                    activeSockets.delete(sanitizedNumber);
+                    await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+                }
             }
         });
 
@@ -257,7 +265,7 @@ async function startBot(number, res = null, forceNewSession = false) {
             }
         });
 
-        if ((!existingSession || forceNewSession) && res &&!res.headersSent) {
+        if ((!existingSession || forceNew) && res &&!res.headersSent) {
             setTimeout(async () => {
                 try {
                     const code = await conn.requestPairingCode(sanitizedNumber);
@@ -290,12 +298,12 @@ router.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'pair.html'));
 });
 
-// UPDATED: This now clears old session and forces new pairing
+// REMOVES RESTRICTION - CLEARS OLD SESSION FIRST
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
 
-    // Force new session = true clears old one
+    // forceNew = true wipes old session from MongoDB + local
     await startBot(number, res, true);
 });
 
