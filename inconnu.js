@@ -19,7 +19,8 @@ const {
     getAllNumbersFromMongoDB,
     incrementStats,
     isSudo,
-    isBanned
+    isBanned,
+    deleteSessionFromMongoDB // Make sure this exists in database.js
 } = require('./lib/database');
 
 const path = require('path');
@@ -36,8 +37,8 @@ const activeSockets = new Map();
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-       .filter(f => f.endsWith('.js'))
-       .forEach(f => {
+      .filter(f => f.endsWith('.js'))
+      .forEach(f => {
             try {
                 require(path.join(pluginsDir, f));
             } catch (e) {
@@ -120,13 +121,30 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 }
 
 // ================= START BOT =================
-async function startBot(number, res = null) {
+async function startBot(number, res = null, forceNewSession = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
 
     try {
+        // If forcing new session, clear old one first
+        if (forceNewSession) {
+            console.log(`⚡ Clearing old session for ${sanitizedNumber}`);
+            await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+            if (fs.existsSync(sessionDir)) {
+                fs.removeSync(sessionDir);
+            }
+            if (activeSockets.has(sanitizedNumber)) {
+                try {
+                    const oldSocket = activeSockets.get(sanitizedNumber);
+                    oldSocket.ws.close();
+                    oldSocket.end();
+                } catch {}
+                activeSockets.delete(sanitizedNumber);
+            }
+        }
+
         const existingSession = await getSessionFromMongoDB(sanitizedNumber);
-        if (existingSession) {
+        if (existingSession &&!forceNewSession) {
             fs.ensureDirSync(sessionDir);
             fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
         }
@@ -139,7 +157,7 @@ async function startBot(number, res = null) {
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
             },
             printQRInTerminal: false,
-            usePairingCode:!existingSession,
+            usePairingCode:!existingSession || forceNewSession,
             browser: Browsers.macOS('Safari'),
             logger: pino({ level: 'silent' })
         });
@@ -239,18 +257,19 @@ async function startBot(number, res = null) {
             }
         });
 
-        if (!existingSession && res &&!res.headersSent) {
+        if ((!existingSession || forceNewSession) && res &&!res.headersSent) {
             setTimeout(async () => {
                 try {
                     const code = await conn.requestPairingCode(sanitizedNumber);
                     res.json({ code });
                 } catch (e) {
-                    if (!res.headersSent) res.json({ error: 'Failed' });
+                    if (!res.headersSent) res.json({ error: 'Failed to generate code' });
                 }
             }, 3000);
         }
     } catch (err) {
         console.error('❌ Error in startBot:', err);
+        if (res &&!res.headersSent) res.json({ error: 'Bot start failed' });
     }
 }
 
@@ -271,10 +290,13 @@ router.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'pair.html'));
 });
 
+// UPDATED: This now clears old session and forces new pairing
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
-    await startBot(number, res);
+
+    // Force new session = true clears old one
+    await startBot(number, res, true);
 });
 
 router.get('/status', (req, res) => {
