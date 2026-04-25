@@ -1,5 +1,5 @@
 {
-  "name": "Teddy Tech",
+  "name": "inconnu-boy",
   "version": "2.0.0",
   "description": "TEDDY-XMD Hosting Platform",
   "main": "index.js",
@@ -12,8 +12,7 @@
     "node": "20.x"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "npm:gifted-baileys",
-    "gifted-baileys": "^6.7.0",
+    "@whiskeysockets/baileys": "github:Giftedmaurice/gifted-baileys",
     "axios": "^1.6.0",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
