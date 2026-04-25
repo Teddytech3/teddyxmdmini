@@ -4,7 +4,7 @@
   "description": "A WhatsApp Bot Created By TEDDY-XMD",
   "main": "index.js",
   "scripts": {
-    "start": "pm2 start popkid.js --deep-monitoring --attach --name TEDDY-XMD",
+    "start": "pm2 start index.js --deep-monitoring --attach --name TEDDY-XMD",
     "stop": "pm2 stop TEDDY-XMD",
     "restart": "pm2 restart TEDDY-XMD"
   },
