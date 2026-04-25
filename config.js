@@ -16,9 +16,9 @@ module.exports = {
     // 2. INFORMATIONS DU BOT
     // ===========================================================
     PREFIX: process.env.PREFIX || '.',
-    OWNER_NUMBER: process.env.OWNER_NUMBER || '+923078071982', // Mettez votre numéro ici
-    BOT_NAME: "BILAL MD",
-    BOT_FOOTER: '© ᴘᴏᴡᴇʀᴇᴅ ʙʏ bilal',
+    OWNER_NUMBER: process.env.OWNER_NUMBER || '+254799963583', // Mettez votre numéro ici
+    BOT_NAME: "TEDDY-XMD",
+    BOT_FOOTER: '© ᴘᴏᴡᴇʀᴇᴅ ʙʏ 𝚃𝙴𝙳𝙳𝚈-𝚃𝙴𝙲𝙷',
     
     // Mode de travail : public, private, group, inbox
     WORK_TYPE: process.env.WORK_TYPE || "public", 
@@ -50,19 +50,19 @@ module.exports = {
     WELCOME_IMAGE: process.env.WELCOME_IMAGE || null, 
     GOODBYE_IMAGE: process.env.GOODBYE_IMAGE || null,
     
-    GROUP_INVITE_LINK: process.env.GROUP_INVITE_LINK || 'https://chat.whatsapp.com/BwWffeDwiqe6cjDDklYJ5m',
+    GROUP_INVITE_LINK: process.env.GROUP_INVITE_LINK || 'https://chat.whatsapp.com/CLClgqJIC59GrcI4sRzLu8',
     
     // ===========================================================
     // 6. SÉCURITÉ & ANTI-CALL
     // ===========================================================
     ANTI_CALL: process.env.ANTI_CALL || 'false', // Rejeter les appels
-    REJECT_MSG: process.env.REJECT_MSG || '*CALL NAHI KARE PLEASE ☺️🌹*',
+    REJECT_MSG: process.env.REJECT_MSG || '*NO CALLS ALLOWED PLEASE ☺️🌹*',
     
     // ===========================================================
     // 7. IMAGES & LIENS
     // ===========================================================
-    IMAGE_PATH: 'https://files.catbox.moe/kunzpz.png',
-    CHANNEL_LINK: 'https://whatsapp.com/channel/0029VbBXuGe4yltMLngL582d',
+    IMAGE_PATH: 'https://files.catbox.moe/13nyhx.jpg',
+    CHANNEL_LINK: 'https://chat.whatsapp.com/CLClgqJIC59GrcI4sRzLu8',
     
     // ===========================================================
     // 8. EXTERNAL API (Optionnel)
