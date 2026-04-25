@@ -16,7 +16,7 @@ module.exports = {
     // 2. BOT INFORMATION
     // ===========================================================
     PREFIX: process.env.PREFIX || '.',
-    OWNER_NUMBER: process.env.OWNER_NUMBER || '+923078071982', // Put your number here
+    OWNER_NUMBER: process.env.OWNER_NUMBER || '+254799963583', // Put your number here
     BOT_NAME: "TEDDY-XMD",
     BOT_FOOTER: '⚡ Powered by TEDDY-XMD',
     
@@ -61,7 +61,7 @@ module.exports = {
     // ===========================================================
     // 7. IMAGES & LINKS
     // ===========================================================
-    IMAGE_PATH: 'https://files.catbox.moe/kunzpz.png',
+    IMAGE_PATH: 'https://files.catbox.moe/13nyhx.jpg',
     CHANNEL_LINK: 'https://whatsapp.com/channel/0029VbBXuGe4yltMLngL582d',
     
     // ===========================================================
