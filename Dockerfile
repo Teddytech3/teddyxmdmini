@@ -18,8 +18,8 @@ WORKDIR /app
 
 COPY package*.json ./
 
-# Use npm ci for clean installs
-RUN npm ci --production
+# Use npm install if no package-lock.json exists
+RUN npm install --omit=dev
 
 COPY . .
 
