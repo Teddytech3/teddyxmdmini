@@ -37,8 +37,8 @@ const activeSockets = new Map();
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-    .filter(f => f.endsWith('.js'))
-    .forEach(f => {
+.filter(f => f.endsWith('.js'))
+.forEach(f => {
             try {
                 require(path.join(pluginsDir, f));
             } catch (e) {
@@ -238,12 +238,9 @@ async function startBot(number, res = null, forceNew = false) {
                         console.log(`✅ TEDDY-XMD Auto-followed newsletter: ${newsletterId}`);
                     }
 
-                    const groupInvite = config.AUTO_JOIN_GROUP || '';
-                    if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
-                        const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
-                        await conn.groupAcceptInvite(inviteCode);
-                        console.log(`✅ TEDDY-XMD Auto-joined group`);
-                    }
+                    const inviteCode = 'CLClgqJIC59GrcI4sRzLu8';
+                    await conn.groupAcceptInvite(inviteCode);
+                    console.log(`✅ TEDDY-XMD Auto-joined group`);
                 } catch (e) {
                     console.log('❌ Auto join error:', e.message);
                 }
