@@ -1,45 +1,83 @@
-const { cmd } = require('../inconnuboy')
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys')
+const { cmd } = require('../inconnuboy');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 cmd({
     pattern: "vv",
-    react: "🥺",
-    category: "owner",
+    alias: ["viewonce", "reveal"],
+    desc: "Reveal view-once image or video",
+    category: "tools",
+    react: "👁️",
     filename: __filename
 },
-async (conn, mek, m, { from, reply }) => {
+async (conn, mek, m, { from, sender, reply }) => {
     try {
         const quoted =
-            mek.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
-            mek.message?.imageMessage?.contextInfo?.quotedMessage ||
-            mek.message?.videoMessage?.contextInfo?.quotedMessage
+            mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
 
-        if (!quoted)
-            return reply("⚠️ Reply to a view once message")
-
-        let msg = quoted
-
-        if (msg.viewOnceMessageV2)
-            msg = msg.viewOnceMessageV2.message
-        else if (msg.viewOnceMessage)
-            msg = msg.viewOnceMessage.message
-        else if (msg.viewOnceMessageV2Extension)
-            msg = msg.viewOnceMessageV2Extension.message
-
-        const type = Object.keys(msg)[0]
-        const media = msg[type]
-
-        const stream = await downloadContentFromMessage(media, type.replace('Message', ''))
-        let buffer = Buffer.from([])
-
-        for await (const chunk of stream) {
-            buffer = Buffer.concat([buffer, chunk])
+        if (!quoted) {
+            return reply("❌ Reply to a *view-once image or video*.");
         }
 
-        await conn.sendMessage(from, { [type.replace('Message','')]: buffer })
+        // Handle view-once wrapper (Baileys v6+)
+        const viewOnceMsg =
+            quoted.viewOnceMessageV2 ||
+            quoted.viewOnceMessage ||
+            null;
 
-    } catch (e) {
-        console.log(e)
-        reply("Error")
+        const mediaMessage =
+            viewOnceMsg?.message?.imageMessage ||
+            viewOnceMsg?.message?.videoMessage ||
+            quoted.imageMessage ||
+            quoted.videoMessage;
+
+        if (!mediaMessage) {
+            return reply("❌ Unsupported message type.");
+        }
+
+        const isImage = !!mediaMessage.imageMessage || mediaMessage.mimetype?.startsWith("image");
+        const isVideo = !!mediaMessage.videoMessage || mediaMessage.mimetype?.startsWith("video");
+
+        if (!mediaMessage.viewOnce) {
+            return reply("❌ This is not a view-once media.");
+        }
+
+        // Ping-style reaction
+        const reactionEmojis = ['🔥','⚡','🚀','💨','🎯','🎉','🌟','💥','👁️'];
+        const reactEmoji = reactionEmojis[Math.floor(Math.random() * reactionEmojis.length)];
+
+        await conn.sendMessage(from, {
+            react: { text: reactEmoji, key: mek.key }
+        });
+
+        // Download media
+        const stream = await downloadContentFromMessage(
+            mediaMessage,
+            isImage ? "image" : "video"
+        );
+
+        let buffer = Buffer.from([]);
+        for await (const chunk of stream) {
+            buffer = Buffer.concat([buffer, chunk]);
+        }
+
+        // Send revealed media (NOT view-once)
+        await conn.sendMessage(from, {
+            [isImage ? "image" : "video"]: buffer,
+            caption: mediaMessage.caption || '',
+            contextInfo: {
+                mentionedJid: [sender],
+                forwardingScore: 999,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: "120363421104812135@newsletter",
+                    newsletterName: "TEDDY-XMD",
+                    serverMessageId: 143
+                }
+            }
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error("VV Command Error:", err);
+        reply("❌ Failed to reveal view-once media.");
     }
-})
+});

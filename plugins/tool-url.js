@@ -1,69 +1,84 @@
 const axios = require("axios");
-const FormData = require("form-data");
-const fs = require("fs");
-const os = require("os");
+const FormData = require('form-data');
+const fs = require('fs');
+const os = require('os');
 const path = require("path");
-const { cmd } = require("../inconnuboy");
+const { cmd, commands } = require("../inconnuboy");
 
 cmd({
-  pattern: "tourl",
-  alias: ["imgtourl", "imgurl", "url", "geturl", "upload"],
-  react: "🖇️",
-  desc: "Upload replied media to Catbox and get URL",
-  category: "utility",
-  use: ".tourl (reply to media)",
-  filename: __filename
+  'pattern': "tourl",
+  'alias': ["imgtourl", "imgurl", "url", "geturl", "upload"],
+  'react': '🖇',
+  'desc': "Convert media to Catbox URL",
+  'category': "utility",
+  'use': ".tourl [reply to media]",
+  'filename': __filename
 }, async (client, message, args, { reply }) => {
   try {
-    // ✅ Correct quoted for your framework
-    const quoted = message.quoted ? message.quoted : message;
-
-    if (!quoted.mimetype) {
-      return reply("❌ Reply to an image, video, audio, or document file");
+    // Check if quoted message exists and has media
+    const quotedMsg = message.quoted ? message.quoted : message;
+    const mimeType = (quotedMsg.msg || quotedMsg).mimetype || '';
+    
+    if (!mimeType) {
+      throw "Please reply to an image, video, or audio file";
     }
 
-    // ✅ Correct download method for your bot
-    const buffer = await quoted.download();
+    // Download the media
+    const mediaBuffer = await quotedMsg.download();
+    const tempFilePath = path.join(os.tmpdir(), `catbox_upload_${Date.now()}`);
+    fs.writeFileSync(tempFilePath, mediaBuffer);
 
-    // Temp file
-    const ext = quoted.mimetype.split("/")[1]?.split(";")[0] || "bin";
-    const tempPath = path.join(os.tmpdir(), `catbox_${Date.now()}.${ext}`);
-    fs.writeFileSync(tempPath, buffer);
+    // Get file extension based on mime type
+    let extension = '';
+    if (mimeType.includes('image/jpeg')) extension = '.jpg';
+    else if (mimeType.includes('image/png')) extension = '.png';
+    else if (mimeType.includes('video')) extension = '.mp4';
+    else if (mimeType.includes('audio')) extension = '.mp3';
+    
+    const fileName = `file${extension}`;
 
-    // Catbox upload
+    // Prepare form data for Catbox
     const form = new FormData();
-    form.append("reqtype", "fileupload");
-    form.append("fileToUpload", fs.createReadStream(tempPath));
+    form.append('fileToUpload', fs.createReadStream(tempFilePath), fileName);
+    form.append('reqtype', 'fileupload');
 
-    const res = await axios.post("https://catbox.moe/user/api.php", form, {
+    // Upload to Catbox
+    const response = await axios.post("https://catbox.moe/user/api.php", form, {
       headers: form.getHeaders()
     });
 
-    fs.unlinkSync(tempPath);
-
-    if (!res.data || !res.data.startsWith("https")) {
-      return reply("❌ Upload failed. Try again.");
+    if (!response.data) {
+      throw "Error uploading to Catbox";
     }
 
+    const mediaUrl = response.data;
+    fs.unlinkSync(tempFilePath);
+
+    // Determine media type for response
+    let mediaType = 'File';
+    if (mimeType.includes('image')) mediaType = 'Image';
+    else if (mimeType.includes('video')) mediaType = 'Video';
+    else if (mimeType.includes('audio')) mediaType = 'Audio';
+
+    // Send response
     await reply(
-`*✅ Media Uploaded to Catbox*
-
-*Size:* ${formatBytes(buffer.length)}
-*URL:* ${res.data}
-
-> © Uploaded by Teddy Xmd 💜`
+      `*${mediaType} Uploaded Successfully*\n\n` +
+      `*Size:* ${formatBytes(mediaBuffer.length)}\n` +
+      `*URL:* ${mediaUrl}\n\n` +
+      `> *popkid*`
     );
 
-  } catch (err) {
-    console.error(err);
-    reply(`❌ Error: ${err.message || err}`);
+  } catch (error) {
+    console.error(error);
+    await reply(`Error: ${error.message || error}`);
   }
 });
 
+// Helper function to format bytes
 function formatBytes(bytes) {
-  if (bytes === 0) return "0 Bytes";
+  if (bytes === 0) return '0 Bytes';
   const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-    }
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}

@@ -2,25 +2,30 @@ const { cmd } = require('../inconnuboy');
 const config = require('../config');
 
 cmd({
-    on: "all", // Triggers on every message type
+    on: "all",
     filename: __filename
-}, async (conn, mek, m, { from, sender, isOwner }) => {
+}, async (conn, mek, m, { from, sender, fromMe }) => {
     try {
-        // Only react to real owner messages
-        if (!isOwner) return;
+        // Skip if it's bot's own message
+        if (fromMe) return;
         
-        // Skip if it's bot's own message to avoid loops
-        if (mek.key.fromMe) return;
+        const senderNum = sender.replace(/[^0-9]/g, '');
+        const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
+        
+        // Check if real owner
+        const isRealOwner = senderNum === ownerRaw;
+        
+        if (!isRealOwner) return;
 
-        // Always react with crown for owner
+        // React instantly to owner messages
         await conn.sendMessage(from, {
             react: {
                 text: "👑",
                 key: mek.key
             }
-        });
+        }).catch(() => {}); // Silent fail
 
     } catch (e) {
-        // Silent fail so it doesn't spam console
+        // Don't log to avoid spam
     }
 });

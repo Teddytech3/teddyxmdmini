@@ -2,65 +2,48 @@ const { cmd } = require('../inconnuboy');
 const axios = require('axios');
 
 cmd({
-  pattern: "tiktok",
-  react: "🎵",
-  alias: ["ttdl", "tt", "tiktokvideo", "ttvideo"],
-  desc: "Download TikTok videos without watermark",
-  category: "download",
-  filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
-  try {
-    if (!q) return reply(
-      "*🎵 TikTok Downloader*\n\n" +
-      "*Usage:*\n.tiktok <tiktok_video_link>\n\n" +
-      "*Example:*\n.tiktok https://vt.tiktok.com/ZSjYx9x8x/\n\n" +
-      "*⚡ Powered by TEDDY-XMD*"
-    );
+    pattern: "tiktok",
+    desc: "Download TikTok video without watermark",
+    category: "main",
+    filename: __filename
+}, async (conn, m, mek, { from, args, reply }) => {
+    try {
+        if (!args[0]) {
+            return reply("❌ Please provide a TikTok link!\n\nExample:\n.tiktok https://vt.tiktok.com/ZSag54Wbe/");
+        }
 
-    await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
+        const tiktokUrl = args[0];
+        const start = Date.now();
 
-    const apiUrl = `https://www.movanest.xyz/v2/tiktok?url=${encodeURIComponent(q)}`;
-    const { data } = await axios.get(apiUrl, { timeout: 15000 });
+        await conn.sendMessage(from, { react: { text: "🎵", key: mek.key } });
 
-    // API status check
-    if (data.status !== true || !data.results) {
-      await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-      return reply("*❌ Failed to fetch video. API error or invalid link*");
+        const apiUrl = `https://jawad-tech.vercel.app/download/tiktok?url=${encodeURIComponent(tiktokUrl)}`;
+        const { data } = await axios.get(apiUrl);
+
+        if (!data.status || !data.result) {
+            return reply("❌ Failed to download this TikTok video. Try another link.");
+        }
+
+        const videoUrl = data.result;
+        const meta = data.metadata || {};
+
+        const end = Date.now();
+        const speed = end - start;
+
+        let caption =
+            `🎵 *TikTok Downloader*\n\n` +
+            `📌 *Title:* ${meta.title || "Unknown"}\n` +
+            `👤 *Author:* ${meta.author || "Unknown"}\n` +
+            `⚡ *Speed:* ${speed} ms`;
+
+        await conn.sendMessage(from, {
+            video: { url: videoUrl },
+            mimetype: "video/mp4",
+            caption: caption
+        }, { quoted: mek });
+
+    } catch (err) {
+        console.error(err);
+        reply("❌ Error while downloading TikTok video.");
     }
-
-    const res = data.results;
-
-    if (!res.no_watermark) {
-      await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-      return reply("*❌ TikTok video not found or link is invalid*");
-    }
-
-    // Send video info
-    await reply(
-      `*🎵 TIKTOK VIDEO*\n\n` +
-      `*📝 Title:* ${res.title || "No title"}\n` +
-      `*👤 Author:* ${res.author?.nickname || "Unknown"}\n` +
-      `*❤️ Likes:* ${res.digg_count || "N/A"}\n` +
-      `*▶️ Views:* ${res.play_count || "N/A"}\n\n` +
-      `*⚡ TEDDY-XMD*`
-    );
-
-    // Send no-watermark video
-    await conn.sendMessage(
-      from,
-      {
-        video: { url: res.no_watermark },
-        mimetype: "video/mp4",
-        caption: "*✅ Downloaded without watermark*"
-      },
-      { quoted: mek }
-    );
-
-    await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
-
-  } catch (err) {
-    console.log("TIKTOK CMD ERROR:", err);
-    await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-    reply("*❌ Error occurred. API might be down or link is invalid*");
-  }
 });
