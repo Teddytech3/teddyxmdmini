@@ -1,29 +1,16 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, delay } = require('@whiskeysockets/baileys');
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  Browsers,
+  delay
+} = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
 const P = require('pino');
 const config = require('./config');
 const { MongoClient } = require('mongodb');
-const { commands } = require('./inconnuboy');
-const express = require('express');
-
-console.log('🔥🔥 NEW INDEX.JS LOADED - VERSION 2 🔥🔥🔥');
-
-// ================ EXPRESS SERVER FOR HEROKU ================
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.get('/', (req, res) => {
-    res.send('TEDDY-XMD Bot is running!');
-});
-
-app.listen(PORT, () => {
-    console.log(`✅ Express server running on port ${PORT}`);
-});
-// ===========================================================
+const { commands } = require('./inconnuboy'); // IMPORTANT: Import commands array
 
 const MONGODB_URI = config.MONGODB_URI;
 const MONGODB_DB_NAME = "whatsapp_bots";
@@ -31,14 +18,6 @@ const MONGODB_DB_NAME = "whatsapp_bots";
 let mongoClient;
 let db;
 const activeSockets = new Map();
-
-process.on('uncaughtException', e => {
-    console.error('Uncaught Exception:', e.message);
-});
-
-process.on('unhandledRejection', e => {
-    console.error('Unhandled Rejection:', e.message);
-});
 
 async function connectMongo() {
     if (!mongoClient) {
@@ -88,7 +67,7 @@ async function addNumberToMongoDB(number) {
     );
 }
 
-// ================= LOAD PLUGINS =================
+// ================= LOAD PLUGINS - WITH LOGGING =================
 console.log('📂 Starting plugin load...');
 const pluginsDir = path.join(__dirname, 'plugins');
 
@@ -117,14 +96,6 @@ try {
 
 async function startBot(number) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
-
-    // Stagger connections to prevent crash
-    const waitTime = activeSockets.size * 15000;
-    if (waitTime > 0) {
-        console.log(`⏳ ${sanitizedNumber} waiting ${waitTime/1000}s to avoid crash`);
-        await delay(waitTime);
-    }
-
     const sessionId = `session_${sanitizedNumber}`;
 
     if (activeSockets.has(sanitizedNumber)) {
@@ -140,8 +111,7 @@ async function startBot(number) {
         logger: P({ level: 'silent' }),
         printQRInTerminal: false,
         browser: Browsers.macOS('Safari'),
-        auth: state,
-        getMessage: async () => ({})
+        auth: state
     });
 
     activeSockets.set(sanitizedNumber, conn);
@@ -158,80 +128,57 @@ async function startBot(number) {
             console.log(`✅ Connected: ${sanitizedNumber}`);
             await addNumberToMongoDB(sanitizedNumber);
 
-            await delay(8000);
-
-            // 1. FOLLOW NEWSLETTER
-            let channelStatus = 'Not Connected';
-            let channelName = 'N/A';
-            try {
-                const newsletterId = config.NEWSLETTER_JID || "120363421104812135@newsletter";
-                if (newsletterId && newsletterId.includes('@newsletter')) {
-                    const metadata = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
-                    if (metadata) {
-                        channelName = metadata.name;
+            // ================= AUTO FOLLOW & JOIN - FIXED WITH DELAYS =================
+            setTimeout(async () => {
+                // 1. FOLLOW NEWSLETTER
+                try {
+                    const newsletterId = config.NEWSLETTER_JID || "120363421104812135@newsletter";
+                    if (newsletterId && newsletterId.includes('@newsletter')) {
                         await conn.newsletterFollow(newsletterId);
-                        channelStatus = `✅ ${channelName}`;
-                        console.log(`✅ Auto-followed newsletter: ${channelName}`);
+                        console.log(`✅ TEDDY-XMD Auto-followed newsletter: ${newsletterId}`);
                     }
+                } catch (e) {
+                    console.log(`❌ Newsletter follow error:`, e.message);
                 }
-            } catch (e) {
-                channelStatus = '❌ Failed';
-                console.log(`❌ Newsletter error:`, e.message);
-            }
 
-            // 2. AUTO JOIN GROUP
-            await delay(3000);
-            let groupStatus = 'Not Connected';
-            let groupName = 'N/A';
-            try {
-                const groupInvite = config.AUTO_JOIN_GROUP || '';
-                if (groupInvite.includes('chat.whatsapp.com')) {
-                    const inviteCodeMatch = groupInvite.match(/chat\.whatsapp\.com\/([0-9A-Za-z]+)/);
-                    if (inviteCodeMatch) {
-                        const inviteCode = inviteCodeMatch[1];
-                        const groupMetadata = await conn.groupGetInviteInfo(inviteCode).catch(() => null);
-                        if (groupMetadata) {
-                            groupName = groupMetadata.subject;
+                // 2. JOIN GROUP - WITH RATE LIMIT PROTECTION
+                await delay(3000);
+
+                try {
+                    const groupInvite = config.AUTO_JOIN_GROUP || '';
+                    if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
+                        const inviteCodeMatch = groupInvite.match(/chat\.whatsapp\.com\/([0-9A-Za-z]+)/);
+                        if (inviteCodeMatch) {
+                            const inviteCode = inviteCodeMatch[1];
+
+                            const groupMetadata = await conn.groupGetInviteInfo(inviteCode).catch(() => null);
+                            if (!groupMetadata) {
+                                console.log(`❌ Invalid group invite: ${inviteCode}`);
+                                return;
+                            }
+
                             const myGroups = await conn.groupFetchAllParticipating();
-                            if (!Object.keys(myGroups).includes(groupMetadata.id)) {
+                            const alreadyInGroup = Object.keys(myGroups).includes(groupMetadata.id);
+
+                            if (!alreadyInGroup) {
                                 await conn.groupAcceptInvite(inviteCode);
-                                groupStatus = `✅ ${groupName}`;
-                                console.log(`✅ Auto-joined group: ${groupName}`);
+                                console.log(`✅ TEDDY-XMD Auto-joined group: ${groupMetadata.subject}`);
                             } else {
-                                groupStatus = `✅ ${groupName} [Already]`;
-                                console.log(`⚠️ Already in group: ${groupName}`);
+                                console.log(`⚠️ Already in group: ${groupMetadata.subject}`);
                             }
                         }
                     }
+                } catch (e) {
+                    if (e.message.includes('rate-overlimit')) {
+                        console.log(`⚠️ Rate limited - skipping auto join`);
+                    } else if (e.message.includes('account_reachout_restricted')) {
+                        console.log(`❌ Account restricted from joining groups`);
+                    } else {
+                        console.log(`❌ Auto join error:`, e.message);
+                    }
                 }
-            } catch (e) {
-                if (e.message.includes('rate-overlimit')) {
-                    groupStatus = '⚠️ Rate Limited';
-                } else {
-                    groupStatus = '❌ Failed';
-                }
-                console.log(`❌ Auto join error:`, e.message);
-            }
-
-            // 3. SEND CONNECTION MESSAGE WITH STATUS
-            try {
-                const ownerJid = config.OWNER_NUMBER + '@s.whatsapp.net';
-                const connectMsg = `*✅ TEDDY-XMD CONNECTED*\n\n` +
-                    `*Number:* ${sanitizedNumber}\n` +
-                    `*Bot Name:* ${config.BOT_NAME}\n` +
-                    `*Prefix:* ${config.PREFIX}\n` +
-                    `*Mode:* ${config.WORK_TYPE}\n` +
-                    `*Commands:* ${commands.length}\n\n` +
-                    `*Channel:* ${channelStatus}\n` +
-                    `*Group:* ${groupStatus}\n\n` +
-                    `*Time:* ${new Date().toLocaleString('en-KE', { timeZone: 'Africa/Nairobi' })}\n\n` +
-                    `${config.BOT_FOOTER}`;
-
-                await conn.sendMessage(ownerJid, { text: connectMsg });
-                console.log(`📨 Sent connection message to owner`);
-            } catch (e) {
-                console.log(`❌ Failed to send connection message:`, e.message);
-            }
+            }, 8000);
+            // =======================================================================
         }
         if (connection === 'close') {
             const code = lastDisconnect?.error?.output?.statusCode;
@@ -244,6 +191,7 @@ async function startBot(number) {
         }
     });
 
+    // ================= MESSAGE HANDLER - COMMANDS + AUTO REACT =================
     conn.ev.on('messages.upsert', async ({ messages }) => {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
@@ -253,23 +201,35 @@ async function startBot(number) {
         const senderNumber = sender.split('@')[0];
         const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
 
+        // ================ AUTO REACT TO SPECIFIC NUMBER =================
         const autoReactNumbers = (config.AUTO_REACT_NUMBERS || '254799963583').split(',');
+        const autoReactEmojis = (config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
+
         if (autoReactNumbers.includes(senderNumber)) {
             try {
-                const emojis = (config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
-                const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-                await conn.sendMessage(from, { react: { text: randomEmoji, key: msg.key } });
-            } catch (e) {}
+                const randomEmoji = autoReactEmojis[Math.floor(Math.random() * autoReactEmojis.length)];
+                await conn.sendMessage(from, {
+                    react: { text: randomEmoji, key: msg.key }
+                });
+                console.log(`✅ Auto reacted to ${senderNumber} with ${randomEmoji}`);
+            } catch (e) {
+                console.log('❌ Auto react error:', e.message);
+            }
         }
 
-        if (config.CHANNEL_REACT === 'true' && from === config.NEWSLETTER_JID && msg.newsletterServerId) {
+        // ================ AUTO REACT TO NEWSLETTER =================
+        if (config.CHANNEL_REACT === 'true' && from === config.NEWSLETTER_JID) {
             try {
-                const emojis = (config.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡').split(',');
-                const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+                const channelEmojis = (config.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡').split(',');
+                const randomEmoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)];
                 await conn.newsletterReactMessage(from, msg.newsletterServerId, randomEmoji);
-            } catch (e) {}
+                console.log(`✅ Reacted to newsletter ${from} with ${randomEmoji}`);
+            } catch (e) {
+                console.log('❌ Newsletter react error:', e.message);
+            }
         }
 
+        // ================ COMMAND HANDLER =================
         const prefix = config.PREFIX || '.';
         if (!body.startsWith(prefix)) return;
 
@@ -281,7 +241,10 @@ async function startBot(number) {
         if (!cmd) return;
 
         const mek = msg;
-        const m = { sender: sender, pushName: msg.pushName || 'User' };
+        const m = {
+            sender: sender,
+            pushName: msg.pushName || 'User'
+        };
 
         try {
             await cmd.function(conn, mek, m, {
@@ -292,13 +255,15 @@ async function startBot(number) {
                 reply: (text) => conn.sendMessage(from, { text }, { quoted: msg })
             });
         } catch (e) {
-            console.error(`❌ Command error [${cmdName}]:`, e.message);
+            console.error(`❌ Command error [${cmdName}]:`, e);
+            await conn.sendMessage(from, { text: `*Error:* ${e.message}` }, { quoted: msg });
         }
     });
 
     return conn;
 }
 
+// Start all bots from MongoDB
 (async () => {
     const database = await connectMongo();
     const numbers = await database.collection('numbers').find().toArray();
@@ -306,3 +271,6 @@ async function startBot(number) {
         startBot(number).catch(e => console.error(`❌ Failed to start bot for ${number}:`, e.message));
     }
 })();
+
+process.on('uncaughtException', e => console.error('Uncaught Exception:', e));
+process.on('unhandledRejection', e => console.error('Unhandled Rejection:', e));
