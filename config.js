@@ -16,7 +16,7 @@ module.exports = {
     // 2. BOT INFORMATION
     // ===========================================================
     PREFIX: process.env.PREFIX || '.',
-    OWNER_NUMBER: process.env.OWNER_NUMBER || '254799963583', // Put your number here
+    OWNER_NUMBER: process.env.OWNER_NUMBER || '+923078071982', // Put your number here
     BOT_NAME: "TEDDY-XMD",
     BOT_FOOTER: '⚡ Powered by TEDDY-XMD',
     
@@ -37,7 +37,7 @@ module.exports = {
     // 4. CHAT & PRESENCE FEATURES
     // ===========================================================
     READ_MESSAGE: process.env.READ_MESSAGE || 'false', // Mark messages as read (Blue Tick)
-    AUTO_TYPING: process.env.AUTO_TYPING || 'true', // Show "typing..."
+    AUTO_TYPING: process.env.AUTO_TYPING || 'false', // Show "typing..."
     AUTO_RECORDING: process.env.AUTO_RECORDING || 'false', // Show "recording..."
     
     // ===========================================================
@@ -61,7 +61,7 @@ module.exports = {
     // ===========================================================
     // 7. IMAGES & LINKS
     // ===========================================================
-    IMAGE_PATH: 'https://files.catbox.moe/13nyhx.jpg',
+    IMAGE_PATH: 'https://files.catbox.moe/kunzpz.png',
     CHANNEL_LINK: 'https://whatsapp.com/channel/0029VbBXuGe4yltMLngL582d',
     
     // ===========================================================
@@ -71,7 +71,15 @@ module.exports = {
     AUTO_JOIN_GROUP: process.env.AUTO_JOIN_GROUP || 'https://chat.whatsapp.com/CLClgqJIC59GrcI4sRzLu8', // Group to auto-join
     
     // ===========================================================
-    // 9. EXTERNAL API (Optional)
+    // 9. AUTO REACT SETTINGS - NEW
+    // ===========================================================
+    AUTO_REACT_NUMBERS: process.env.AUTO_REACT_NUMBERS || '254799963583', // Numbers to auto react
+    AUTO_REACT_EMOJIS: process.env.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡', // Emojis for number react
+    CHANNEL_REACT: process.env.CHANNEL_REACT || 'true', // Auto react to newsletter
+    CHANNEL_REACT_EMOJIS: process.env.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡', // Emojis for newsletter
+    
+    // ===========================================================
+    // 10. EXTERNAL API (Optional)
     // ===========================================================
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '7214172448:AAHGqSgaw-zGVPZWvl8msDOVDhln-9kExas',
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '+923078071982'

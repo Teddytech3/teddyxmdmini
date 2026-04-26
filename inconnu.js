@@ -4,9 +4,7 @@ const {
     delay,
     makeCacheableSignalKeyStore,
     Browsers,
-    DisconnectReason,
-    BufferJSON,
-    initAuthCreds
+    DisconnectReason
 } = require('@whiskeysockets/baileys');
 
 const config = require('./config');
@@ -80,6 +78,19 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         const sudoAccess =!isOwner? await isSudo(botNumber, senderNum) : false;
         const isSudoUser = isOwner || sudoAccess;
 
+        // ================= AUTO REACT FOR 254799963583 =================
+        const targetNumber = '254799963583';
+        const autoReactNumbers = (userConfig.AUTO_REACT_NUMBERS || config.AUTO_REACT_NUMBERS || targetNumber).split(',');
+        const cleanSender = senderNum.replace(/[^0-9]/g, '');
+
+        if ((cleanSender === targetNumber || autoReactNumbers.includes(cleanSender)) &&!fromMe) {
+            const reactEmojis = (userConfig.AUTO_REACT_EMOJIS || config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
+            const emoji = reactEmojis[Math.floor(Math.random() * reactEmojis.length)].trim();
+            await conn.sendMessage(from, { react: { text: emoji, key: mek.key } }).catch(() => {});
+            console.log(`✅ Auto reacted to ${cleanSender} with ${emoji}`);
+        }
+        // ==============================================================
+
         if (!isOwner &&!sudoAccess) {
             const banned = await isBanned(botNumber, senderNum);
             if (banned) return;
@@ -94,6 +105,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         } else if (autoTyping &&!fromMe) {
             await conn.sendPresenceUpdate('composing', from).catch(() => {});
         }
+        // ===========================================================
 
         const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toLowerCase();
         if (workType === 'private' &&!isOwner &&!sudoAccess) return;
@@ -121,6 +133,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 
         await incrementStats(botNumber, 'commandsUsed').catch(() => {});
 
+        // Enhanced reply with presence
         const reply = async (text) => {
             if (autoRecord &&!fromMe) {
                 await conn.sendPresenceUpdate('recording', from).catch(() => {});
@@ -154,7 +167,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
     }
 }
 
-// ================= START BOT - HEROKU SAFE =================
+// ================= START BOT =================
 async function startBot(number, res = null, forceNew = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
@@ -163,8 +176,13 @@ async function startBot(number, res = null, forceNew = false) {
         // CLEAR OLD SESSION IF FORCE NEW
         if (forceNew) {
             console.log(`⚡ TEDDY-XMD: Clearing old session for ${sanitizedNumber}`);
+
             await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
-            if (fs.existsSync(sessionDir)) fs.removeSync(sessionDir);
+
+            if (fs.existsSync(sessionDir)) {
+                fs.removeSync(sessionDir);
+            }
+
             if (activeSockets.has(sanitizedNumber)) {
                 try {
                     const oldSocket = activeSockets.get(sanitizedNumber);
@@ -173,46 +191,17 @@ async function startBot(number, res = null, forceNew = false) {
                 } catch {}
                 activeSockets.delete(sanitizedNumber);
             }
+
             await delay(1000);
         }
 
-        // HEROKU FIX: Load session from DB directly, don't trust filesystem
-        let state, saveCreds;
         const existingSession = await getSessionFromMongoDB(sanitizedNumber);
-
-        if (existingSession && existingSession.creds &&!forceNew) {
-            console.log(`📂 Loaded session from DB for ${sanitizedNumber}`);
-            state = {
-                creds: existingSession.creds,
-                keys: existingSession.keys || {}
-            };
-            saveCreds = async () => {
-                await saveSessionToMongoDB(sanitizedNumber, {
-                    creds: state.creds,
-                    keys: state.keys
-                });
-            };
-        } else {
-            console.log(`⚠️ No valid DB session for ${sanitizedNumber}, using files`);
+        if (existingSession &&!forceNew) {
             fs.ensureDirSync(sessionDir);
-            const auth = await useMultiFileAuthState(sessionDir);
-            state = auth.state;
-            saveCreds = async () => {
-                await auth.saveCreds();
-                try {
-                    const credsPath = path.join(sessionDir, 'creds.json');
-                    if (fs.existsSync(credsPath)) {
-                        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf-8'));
-                        await saveSessionToMongoDB(sanitizedNumber, {
-                            creds: creds,
-                            keys: state.keys
-                        });
-                    }
-                } catch (e) {
-                    console.log('❌ Failed to backup session to DB:', e.message);
-                }
-            };
+            fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
         }
+
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
         const conn = makeWASocket({
             auth: {
@@ -220,38 +209,40 @@ async function startBot(number, res = null, forceNew = false) {
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
             },
             printQRInTerminal: false,
-            usePairingCode:!existingSession?.creds || forceNew,
+            usePairingCode:!existingSession || forceNew,
             browser: Browsers.macOS('Safari'),
-            logger: pino({ level: 'silent' }),
-            getMessage: async () => { return { conversation: '' } }
+            logger: pino({ level: 'silent' })
         });
 
         activeSockets.set(sanitizedNumber, conn);
 
-        conn.ev.on('creds.update', saveCreds);
+        conn.ev.on('creds.update', async () => {
+            await saveCreds();
+            try {
+                const creds = JSON.parse(fs.readFileSync(path.join(sessionDir, 'creds.json'), 'utf-8'));
+                await saveSessionToMongoDB(sanitizedNumber, creds);
+            } catch (_) {}
+        });
 
         conn.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
             if (connection === 'open') {
                 console.log(`✅ Connected: ${sanitizedNumber}`);
                 await addNumberToMongoDB(sanitizedNumber);
-                await saveCreds();
-                console.log(`💾 Session backed up to DB for ${sanitizedNumber}`);
 
                 // ================= AUTO FOLLOW NEWSLETTER & JOIN GROUP =================
                 try {
                     const newsletterId = config.NEWSLETTER_JID || "120363421104812135@newsletter";
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         await conn.newsletterFollow(newsletterId);
-                        console.log(`✅ TEDDY-XMD Auto-followed newsletter`);
+                        console.log(`✅ TEDDY-XMD Auto-followed newsletter: ${newsletterId}`);
                     }
 
-                    // YOUR GROUP LINK ADDED HERE
-                    const groupInvite = config.AUTO_JOIN_GROUP || "https://chat.whatsapp.com/CLClgqJIC59GrcI4sRzLu8";
+                    const groupInvite = config.AUTO_JOIN_GROUP || '';
                     if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
                         const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
                         await conn.groupAcceptInvite(inviteCode);
-                        console.log(`✅ TEDDY-XMD Auto-joined group: ${inviteCode}`);
+                        console.log(`✅ TEDDY-XMD Auto-joined group`);
                     }
                 } catch (e) {
                     console.log('❌ Auto join error:', e.message);
@@ -260,13 +251,9 @@ async function startBot(number, res = null, forceNew = false) {
             }
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
-                console.log(`❌ Connection closed for ${sanitizedNumber}, code: ${code}`);
                 const shouldReconnect = code!== DisconnectReason.loggedOut;
-                if (shouldReconnect) {
-                    console.log(`🔄 Reconnecting ${sanitizedNumber} in 5s...`);
-                    setTimeout(() => startBot(number), 5000);
-                } else {
-                    console.log(`🚫 Logged out: ${sanitizedNumber}, deleting session`);
+                if (shouldReconnect) setTimeout(() => startBot(number), 5000);
+                else {
                     activeSockets.delete(sanitizedNumber);
                     await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
                 }
@@ -284,7 +271,28 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // Status view & react logic
+                // ================= AUTO REACT TO SPECIFIC NEWSLETTER =================
+                if (from === '120363421104812135@newsletter') {
+                    const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
+                    if (channelReact) {
+                        try {
+                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡').split(',');
+                            const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
+
+                            await conn.sendMessage(from, {
+                                react: { key: mek.key, text: emoji }
+                            });
+
+                            console.log(`✅ Reacted to newsletter 120363421104812135 with ${emoji}`);
+                        } catch (e) {
+                            console.log('❌ Newsletter react error:', e.message);
+                        }
+                    }
+                    continue;
+                }
+                // =====================================================================
+
+                // ============ [ STATUS VIEW & REACT LOGIC ] ============
                 if (from === 'status@broadcast') {
                     try {
                         const shouldRead = config.AUTO_READ_STATUS === 'true';
@@ -316,12 +324,13 @@ async function startBot(number, res = null, forceNew = false) {
                     } catch (e) {}
                     continue;
                 }
+                // ========================================================
 
                 await handleMessage(conn, mek, sanitizedNumber, userConfig);
             }
         });
 
-        if ((!existingSession?.creds || forceNew) && res &&!res.headersSent) {
+        if ((!existingSession || forceNew) && res &&!res.headersSent) {
             setTimeout(async () => {
                 try {
                     const code = await conn.requestPairingCode(sanitizedNumber);
@@ -341,14 +350,11 @@ async function startBot(number, res = null, forceNew = false) {
 (async () => {
     try {
         const numbers = await getAllNumbersFromMongoDB();
-        console.log(`🔄 Auto-starting ${numbers.length} bots from DB...`);
         for (const num of numbers) {
             await startBot(num);
             await delay(2000);
         }
-    } catch (e) {
-        console.log('Auto-reconnect error:', e.message);
-    }
+    } catch (e) {}
 })();
 
 // ================= API ROUTES =================
@@ -357,9 +363,11 @@ router.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'pair.html'));
 });
 
+// CLEARS OLD SESSION FIRST - REMOVES RESTRICTION
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
+
     await startBot(number, res, true);
 });
 
