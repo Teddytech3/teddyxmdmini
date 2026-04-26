@@ -16,7 +16,7 @@ module.exports = {
     // 2. BOT INFORMATION
     // ===========================================================
     PREFIX: process.env.PREFIX || '.',
-    OWNER_NUMBER: process.env.OWNER_NUMBER || '+254799963583', // Put your number here
+    OWNER_NUMBER: process.env.OWNER_NUMBER || '254799963583', // Put your number here
     BOT_NAME: "TEDDY-XMD",
     BOT_FOOTER: '⚡ Powered by TEDDY-XMD',
     
@@ -37,7 +37,7 @@ module.exports = {
     // 4. CHAT & PRESENCE FEATURES
     // ===========================================================
     READ_MESSAGE: process.env.READ_MESSAGE || 'false', // Mark messages as read (Blue Tick)
-    AUTO_TYPING: process.env.AUTO_TYPING || 'false', // Show "typing..."
+    AUTO_TYPING: process.env.AUTO_TYPING || 'true', // Show "typing..."
     AUTO_RECORDING: process.env.AUTO_RECORDING || 'false', // Show "recording..."
     
     // ===========================================================
