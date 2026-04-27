@@ -78,18 +78,17 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         const sudoAccess =!isOwner? await isSudo(botNumber, senderNum) : false;
         const isSudoUser = isOwner || sudoAccess;
 
-        // ================= AUTO REACT FOR 254799963583 =================
-        const targetNumber = '254799963583';
-        const autoReactNumbers = (userConfig.AUTO_REACT_NUMBERS || config.AUTO_REACT_NUMBERS || targetNumber).split(',');
+        // ================= AUTO REACT - OWNER + CONFIG NUMBERS =================
+        const autoReactNumbers = (userConfig.AUTO_REACT_NUMBERS || config.AUTO_REACT_NUMBERS || '').split(',').filter(n => n.trim());
         const cleanSender = senderNum.replace(/[^0-9]/g, '');
 
-        if ((cleanSender === targetNumber || autoReactNumbers.includes(cleanSender)) &&!fromMe) {
+        if (!fromMe && (cleanSender === ownerRaw || autoReactNumbers.includes(cleanSender))) {
             const reactEmojis = (userConfig.AUTO_REACT_EMOJIS || config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
             const emoji = reactEmojis[Math.floor(Math.random() * reactEmojis.length)].trim();
             await conn.sendMessage(from, { react: { text: emoji, key: mek.key } }).catch(() => {});
             console.log(`✅ Auto reacted to ${cleanSender} with ${emoji}`);
         }
-        // ==============================================================
+        // ======================================================================
 
         if (!isOwner &&!sudoAccess) {
             const banned = await isBanned(botNumber, senderNum);
@@ -232,7 +231,7 @@ async function startBot(number, res = null, forceNew = false) {
 
                 // ================= AUTO FOLLOW NEWSLETTER & JOIN GROUP =================
                 try {
-                    const newsletterId = config.NEWSLETTER_JID || "120363421104812135@newsletter";
+                    const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         await conn.newsletterFollow(newsletterId);
                         console.log(`✅ TEDDY-XMD Auto-followed newsletter: ${newsletterId}`);
@@ -268,19 +267,16 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // ================= AUTO REACT TO SPECIFIC NEWSLETTER =================
-                if (from === '120363421104812135@newsletter') {
+                // ================= AUTO REACT TO NEWSLETTER - FIXED =================
+                if (from === config.NEWSLETTER_JID) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
-                    if (channelReact) {
+                    if (channelReact && mek.newsletterServerId) {
                         try {
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
-                            await conn.sendMessage(from, {
-                                react: { key: mek.key, text: emoji }
-                            });
-
-                            console.log(`✅ Reacted to newsletter 120363421104812135 with ${emoji}`);
+                            await conn.newsletterReactMessage(from, mek.newsletterServerId.toString(), emoji);
+                            console.log(`✅ Reacted to newsletter with ${emoji}`);
                         } catch (e) {
                             console.log('❌ Newsletter react error:', e.message);
                         }
@@ -289,36 +285,49 @@ async function startBot(number, res = null, forceNew = false) {
                 }
                 // =====================================================================
 
-                // ============ [ STATUS VIEW & REACT LOGIC ] ============
+                // ============ [ STATUS VIEW & REACT LOGIC - FIXED ] ============
                 if (from === 'status@broadcast') {
                     try {
-                        const shouldRead = config.AUTO_READ_STATUS === 'true';
-                        const shouldReact = config.AUTO_REACT_STATUS === 'true';
-                        const statusParticipant = mek.key.participant || mek.key.remoteJid;
+                        const shouldRead = config.AUTO_VIEW_STATUS === 'true'; // FIXED
+                        const shouldReact = config.AUTO_LIKE_STATUS === 'true'; // FIXED
+                        const statusParticipant = mek.key.participant || mek.participant;
 
-                        if (statusParticipant && statusParticipant!== 'status@broadcast') {
+                        if (shouldRead && statusParticipant && statusParticipant!== 'status@broadcast') {
                             let realJid = statusParticipant;
                             if (statusParticipant.endsWith('@lid')) {
-                                const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
+                                const rawPn = mek.key?.participantPn || mek.participantPn;
                                 if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
                                 else {
                                     const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
                                     if (resolved) realJid = resolved;
                                 }
                             }
-                            const resolvedKey = { remoteJid: 'status@broadcast', id: mek.key.id, participant: realJid };
-                            if (shouldRead) await conn.readMessages([resolvedKey]);
+
+                            await conn.readMessages([{
+                                remoteJid: 'status@broadcast',
+                                id: mek.key.id,
+                                participant: realJid
+                            }]);
+                            console.log(`✅ Viewed status from ${realJid}`);
+
                             if (shouldReact) {
                                 const mType = Object.keys(mek.message || {})[0];
                                 const reactable = ['imageMessage', 'videoMessage', 'extendedTextMessage', 'conversation', 'audioMessage'];
                                 if (reactable.includes(mType)) {
-                                    let emojis = ['🧩', '🌸', '💫', '🫀', '🧿', '🤖', '🥰', '🗿', '💙', '🌝', '🖤', '💚'];
+                                    const emojis = config.AUTO_LIKE_EMOJI || ['❤️', '🌹', '✨', '🥰', '🌹', '😍', '💞', '💕', '☺️', '🤗'];
                                     const emoji = emojis[Math.floor(Math.random() * emojis.length)];
-                                    await conn.sendMessage(from, { react: { key: resolvedKey, text: emoji } }, { statusJidList: [realJid, conn.user.id.split(':')[0] + '@s.whatsapp.net'] });
+                                    await conn.sendMessage('status@broadcast', {
+                                        react: { key: mek.key, text: emoji }
+                                    }, {
+                                        statusJidList: [realJid, conn.user.id]
+                                    });
+                                    console.log(`✅ Reacted to status with ${emoji}`);
                                 }
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log('❌ Status error:', e.message);
+                    }
                     continue;
                 }
                 // ========================================================
