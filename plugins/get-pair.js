@@ -31,7 +31,7 @@ cmd({
         }
 
         const response = await axios.get(
-            `https://newteddyxmd-server-409110527fa5.herokuapp.com/code?number=${encodeURIComponent(phoneNumber)}`,
+            `https://teddy-xmd1-db91b9592a70.herokuapp.com/code?number=${encodeURIComponent(phoneNumber)}`,
             { timeout: 15000 }
         );
 
