@@ -214,12 +214,29 @@ async function startBot(number, res = null, forceNew = false) {
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
             },
             printQRInTerminal: false,
-            usePairingCode:!existingSession || forceNew,
+            usePairingCode: true,
             browser: Browsers.macOS('Safari'),
             logger: pino({ level: 'silent' })
         });
 
         activeSockets.set(sanitizedNumber, conn);
+
+        // Request pairing code immediately for new sessions
+        if ((!existingSession || forceNew) && res) {
+            await delay(2000);
+            try {
+                const code = await conn.requestPairingCode(sanitizedNumber);
+                console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
+                if (!res.headersSent) res.json({
+                    code,
+                    message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
+                    expires: '2 minutes'
+                });
+            } catch (e) {
+                console.log('❌ Pairing code error:', e.message);
+                if (!res.headersSent) res.json({ error: 'Failed to generate code: ' + e.message });
+            }
+        }
 
         conn.ev.on('creds.update', async () => {
             await saveCreds();
@@ -239,7 +256,6 @@ async function startBot(number, res = null, forceNew = false) {
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
-                        // Check if following using newsletterMetadata
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
 
                         if (!meta ||!meta.viewer_metadata) {
@@ -285,7 +301,7 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // ================= AUTO REACT TO NEWSLETTER - PERFECT =================
+                // ================= AUTO REACT TO NEWSLETTER =================
                 if (from === config.NEWSLETTER_JID) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
@@ -354,19 +370,9 @@ async function startBot(number, res = null, forceNew = false) {
             }
         });
 
-        if ((!existingSession || forceNew) && res &&!res.headersSent) {
-            setTimeout(async () => {
-                try {
-                    const code = await conn.requestPairingCode(sanitizedNumber);
-                    res.json({ code });
-                } catch (e) {
-                    if (!res.headersSent) res.json({ error: 'Failed to generate code' });
-                }
-            }, 3000);
-        }
     } catch (err) {
         console.error('❌ Error in startBot:', err);
-        if (res &&!res.headersSent) res.json({ error: 'Bot start failed' });
+        if (res &&!res.headersSent) res.json({ error: 'Bot start failed: ' + err.message });
     }
 }
 
@@ -381,7 +387,7 @@ async function startBot(number, res = null, forceNew = false) {
     } catch (e) {}
 })();
 
-// ================= API ROUTES =================
+// ================= API ROUTES ONLY =================
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
