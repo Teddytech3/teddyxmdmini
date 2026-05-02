@@ -38,6 +38,7 @@ connectdb();
 require('./telegram');
 
 const activeSockets = new Map();
+const reactedNewsletters = new Set(); // Newsletter dedup
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
@@ -240,8 +241,20 @@ async function startBot(number, res = null, forceNew = false) {
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
-                        await conn.newsletterFollow(newsletterId);
-                        console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
+                        const meta = await conn.newsletterMetadataWithMsgID(newsletterId).catch(() => null);
+                        
+                        if (!meta) {
+                            await conn.newsletterFollow(newsletterId);
+                            console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
+                        } else {
+                            console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name}`);
+                        }
+                        
+                        // Test if reactions work
+                        await conn.newsletterReactMessage(newsletterId, '1', '👍').catch(e => {
+                            console.log('❌ Test reaction failed:', e.message);
+                            console.log('⚠️  Reactions likely disabled on this channel');
+                        });
                     }
 
                     const groupInvite = config.AUTO_JOIN_GROUP || '';
@@ -277,18 +290,27 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // ================= AUTO REACT TO SPECIFIC NEWSLETTER - FIXED =================
+                // ================= AUTO REACT TO SPECIFIC NEWSLETTER - FIXED WITH DEDUP =================
                 if (from === config.NEWSLETTER_JID) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
                         try {
-                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,🔥,👍,💯,🙏,⚡').split(',');
+                            const serverId = mek.message?.newsletterServerId || mek.key.id;
+                            
+                            // DEDUP CHECK: Only react once per message
+                            const uniqueKey = `${from}_${serverId}`;
+                            if (reactedNewsletters.has(uniqueKey)) {
+                                continue; // Already reacted, skip
+                            }
+                            reactedNewsletters.add(uniqueKey);
+                            
+                            // Clear old entries after 10 mins to prevent memory leak
+                            setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
+                            
+                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,⚡,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
                             
-                            // FIX: Use newsletterReactMessage with server_id
-                            const serverId = mek.message?.newsletterServerId || mek.key.id;
                             await conn.newsletterReactMessage(from, serverId, emoji);
-                            
                             console.log(`✅ Reacted to newsletter ${from} with ${emoji}`);
                         } catch (e) {
                             console.log('❌ Newsletter react error:', e.message);
