@@ -28,9 +28,7 @@ const fs = require('fs-extra');
 const pino = require('pino');
 const express = require('express');
 
-const app = express();
 const router = express.Router();
-const PORT = process.env.PORT || 3000;
 
 connectdb();
 
@@ -243,7 +241,7 @@ async function startBot(number, res = null, forceNew = false) {
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         // Check if following using newsletterMetadata
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
-                        
+
                         if (!meta ||!meta.viewer_metadata) {
                             await conn.newsletterFollow(newsletterId);
                             console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
@@ -384,10 +382,6 @@ async function startBot(number, res = null, forceNew = false) {
 })();
 
 // ================= API ROUTES =================
-router.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'pair.html'));
-});
-
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
@@ -397,12 +391,6 @@ router.get('/code', async (req, res) => {
 router.get('/status', (req, res) => {
     const sessions = [...activeSockets.keys()];
     res.json({ active: sessions.length, sessions });
-});
-
-app.use('/', router);
-
-app.listen(PORT, () => {
-    console.log(`✅ ${config.BOT_NAME} Server running on port ${PORT}`);
 });
 
 // Export active sockets for Telegram broadcast
