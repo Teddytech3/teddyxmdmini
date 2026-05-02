@@ -63,7 +63,7 @@ module.exports = {
     // ===========================================================
     // 7. IMAGES & LINKS
     // ===========================================================
-    IMAGE_PATH: 'https://files.catbox.moe/kunzpz.png',
+    IMAGE_PATH: 'https://files.catbox.moe/13nyhx.jpg',
     CHANNEL_LINK: 'https://whatsapp.com/channel/0029VbBXuGe4yltMLngL582d',
     
     // ===========================================================
