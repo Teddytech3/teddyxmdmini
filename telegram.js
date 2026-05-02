@@ -15,6 +15,7 @@ if (!BOT_TOKEN) {
 
 const bot = new Telegraf(BOT_TOKEN);
 const BOT_IMAGE = config.IMAGE_PATH;
+const WEB_PAIR_URL = 'https://teddyxmd1mini-1338329876db.herokuapp.com/'; // Your web link
 const tempSessions = new Map();
 const rateLimit = new Map();
 let totalPairs = 0;
@@ -30,7 +31,7 @@ bot.start(async (ctx) => {
     const text = `👑 *${config.BOT_NAME} Pair Bot*\n\n` +
                  `Hi ${user}! I can pair your WhatsApp to ${config.BOT_NAME}.\n\n` +
                  `*How it works:*\n` +
-                 `1. Tap "Pair WhatsApp"\n` +
+                 `1. Tap "Pair WhatsApp" or "Web Pair"\n` +
                  `2. Send number: 254712345678\n` +
                  `3. Get 8-digit code\n` +
                  `4. WhatsApp → Linked Devices → Link with phone number\n\n` +
@@ -41,7 +42,7 @@ bot.start(async (ctx) => {
         [Markup.button.callback('📱 Pair WhatsApp', 'pair'), Markup.button.callback('❓ Help', 'help')],
         [Markup.button.callback('📊 Bot Status', 'status'), Markup.button.callback('👤 Owner', 'owner')],
         [Markup.button.url('📢 Channel', config.CHANNEL_LINK), Markup.button.url('👥 Group', config.GROUP_LINK || config.CHANNEL_LINK)],
-        [Markup.button.url('🌐 Web Pair', `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`)]
+        [Markup.button.url('🌐 Web Pair', WEB_PAIR_URL)] // Your actual web link
     ]);
 
     try {
@@ -63,7 +64,8 @@ bot.action('pair', async (ctx) => {
     await ctx.reply(
         '*Send your WhatsApp number with country code*\n\n' +
         'Example: `254712345678`\n' +
-        'No + or spaces',
+        'No + or spaces\n\n' +
+        `Or use web: ${WEB_PAIR_URL}`,
         { parse_mode: 'Markdown' }
     );
 });
@@ -72,11 +74,12 @@ bot.action('help', async (ctx) => {
     await ctx.answerCbQuery();
     const helpText = `*${config.BOT_NAME} Help*\n\n` +
                      `*Steps to pair:*\n` +
-                     `1. Send number with country code\n` +
+                     `1. Send number with country code OR use Web Pair\n` +
                      `2. Copy 8-digit code from bot\n` +
                      `3. WhatsApp → Settings → Linked Devices\n` +
                      `4. Link a Device → Link with phone number\n` +
                      `5. Enter the code\n\n` +
+                     `*Web Pair:* ${WEB_PAIR_URL}\n\n` +
                      `*Common issues:*\n` +
                      `• Code expired: Get new code\n` +
                      `• Invalid number: Use 254... format\n` +
@@ -105,6 +108,7 @@ bot.action('status', async (ctx) => {
                        `*System:* ✅ Active\n` +
                        `*Uptime:* ${days}d ${hours}h ${mins}m\n` +
                        `*Total Pairs:* ${totalPairs}\n` +
+                       `*Web Link:* ${WEB_PAIR_URL}\n` +
                        `*Version:* 2.0.0\n` +
                        `*Mode:* Webhook\n\n` +
                        `${config.BOT_FOOTER}`;
@@ -117,12 +121,14 @@ bot.action('owner', async (ctx) => {
     const ownerText = `*${config.BOT_NAME} Owner*\n\n` +
                       `*Developer:* ${config.OWNER_NAME}\n` +
                       `*Contact:* @${config.OWNER_NAME}\n` +
-                      `*Channel:* ${config.CHANNEL_LINK}\n\n` +
+                      `*Channel:* ${config.CHANNEL_LINK}\n` +
+                      `*Web Pair:* ${WEB_PAIR_URL}\n\n` +
                       `${config.BOT_FOOTER}`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.url('📢 Channel', config.CHANNEL_LINK)],
-        [Markup.button.url('👥 Support Group', config.GROUP_LINK || config.CHANNEL_LINK)]
+        [Markup.button.url('👥 Support Group', config.GROUP_LINK || config.CHANNEL_LINK)],
+        [Markup.button.url('🌐 Web Pair', WEB_PAIR_URL)]
     ]);
 
     await ctx.reply(ownerText, { parse_mode: 'Markdown',...keyboard });
@@ -217,19 +223,21 @@ async function startTgPairing(ctx, number) {
                         `3. Link with phone number\n` +
                         `4. Enter code above\n\n` +
                         `⏳ Code expires in 60s\n\n` +
+                        `*Web Pair:* ${WEB_PAIR_URL}\n\n` +
                         `${config.BOT_FOOTER}`;
 
         await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, codeMsg, {
             parse_mode: 'Markdown',
            ...Markup.inlineKeyboard([
                [Markup.button.callback('📋 Copy Code', `copy_${code}`)],
-               [Markup.button.callback('🔄 New Code', 'pair')]
+               [Markup.button.callback('🔄 New Code', 'pair')],
+               [Markup.button.url('🌐 Use Web Pair', WEB_PAIR_URL)]
            ])
         });
 
     } catch (e) {
         console.error('Pair error:', e);
-        await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, '❌ Failed to generate code. Try again.');
+        await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, `❌ Failed to generate code. Try web: ${WEB_PAIR_URL}`);
     }
 }
 
