@@ -19,6 +19,9 @@ const bot = new Telegraf(BOT_TOKEN);
 const tempSessions = new Map();
 const rateLimit = new Map();
 
+// Track total pairs
+let totalPairs = 0;
+
 bot.start(async (ctx) => {
     const payload = ctx.startPayload;
     if (payload && payload.startsWith('pair_')) {
@@ -27,26 +30,35 @@ bot.start(async (ctx) => {
     }
 
     const user = ctx.from.first_name;
-    const text = `👋 *Welcome to ${config.BOT_NAME} Pair Bot*\n\n` +
+    const text = `👑 *${config.BOT_NAME} Pair Bot*\n\n` +
                  `Hi ${user}! I can pair your WhatsApp to ${config.BOT_NAME}.\n\n` +
                  `*How it works:*\n` +
                  `1. Tap "Pair WhatsApp"\n` +
                  `2. Send number: 254712345678\n` +
                  `3. Get 8-digit code\n` +
                  `4. WhatsApp → Linked Devices → Link with phone number\n\n` +
+                 `*Stats:* ${totalPairs} devices paired\n\n` +
                  `${config.BOT_FOOTER}`;
 
     const keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback('📱 Pair WhatsApp', 'pair')],
-        [Markup.button.callback('❓ Help', 'help')],
-        [Markup.button.url('🌐 Web Pair', `https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'localhost:3000'}`)]
+        [Markup.button.callback('📱 Pair WhatsApp', 'pair'), Markup.button.callback('❓ Help', 'help')],
+        [Markup.button.callback('📊 Bot Status', 'status'), Markup.button.callback('👤 Owner', 'owner')],
+        [Markup.button.url('📢 Channel', config.CHANNEL_LINK), Markup.button.url('👥 Group', config.GROUP_LINK || config.CHANNEL_LINK)],
+        [Markup.button.url('🌐 Web Pair', `https://${process.env.HEROKU_APP_NAME}.herokuapp.com`)]
     ]);
 
-    await ctx.replyWithPhoto(BOT_IMAGE, {
-        caption: text,
-        parse_mode: 'Markdown',
-       ...keyboard
-    });
+    try {
+        await ctx.replyWithPhoto(BOT_IMAGE, {
+            caption: text,
+            parse_mode: 'Markdown',
+          ...keyboard
+        });
+    } catch {
+        await ctx.reply(text, {
+            parse_mode: 'Markdown',
+          ...keyboard
+        });
+    }
 });
 
 bot.action('pair', async (ctx) => {
@@ -61,17 +73,62 @@ bot.action('pair', async (ctx) => {
 
 bot.action('help', async (ctx) => {
     await ctx.answerCbQuery();
-    await ctx.replyWithPhoto(BOT_IMAGE, {
-        caption: `*${config.BOT_NAME} Help*\n\n` +
-                 `*Steps:*\n` +
-                 `1. Send number with country code\n` +
-                 `2. Copy 8-digit code\n` +
-                 `3. WhatsApp → Linked Devices\n` +
-                 `4. Link with phone number\n\n` +
-                 `*Support:* ${config.CHANNEL_LINK}\n\n` +
-                 `${config.BOT_FOOTER}`,
-        parse_mode: 'Markdown'
-    });
+    const helpText = `*${config.BOT_NAME} Help*\n\n` +
+                     `*Steps to pair:*\n` +
+                     `1. Send number with country code\n` +
+                     `2. Copy 8-digit code from bot\n` +
+                     `3. WhatsApp → Settings → Linked Devices\n` +
+                     `4. Link a Device → Link with phone number\n` +
+                     `5. Enter the code\n\n` +
+                     `*Common issues:*\n` +
+                     `• Code expired: Get new code\n` +
+                     `• Invalid number: Use 254... format\n` +
+                     `• Too many requests: Wait 30s\n\n` +
+                     `*Support:* ${config.CHANNEL_LINK}\n\n` +
+                     `${config.BOT_FOOTER}`;
+
+    try {
+        await ctx.replyWithPhoto(BOT_IMAGE, {
+            caption: helpText,
+            parse_mode: 'Markdown'
+        });
+    } catch {
+        await ctx.reply(helpText, { parse_mode: 'Markdown' });
+    }
+});
+
+bot.action('status', async (ctx) => {
+    await ctx.answerCbQuery();
+    const uptime = process.uptime();
+    const days = Math.floor(uptime / 86400);
+    const hours = Math.floor((uptime % 86400) / 3600);
+    const mins = Math.floor((uptime % 3600) / 60);
+
+    const statusText = `*${config.BOT_NAME} Status*\n\n` +
+                       `*System:* ✅ Active\n` +
+                       `*Uptime:* ${days}d ${hours}h ${mins}m\n` +
+                       `*Total Pairs:* ${totalPairs}\n` +
+                       `*Version:* 2.0.0\n` +
+                       `*Mode:* Webhook\n\n` +
+                       `${config.BOT_FOOTER}`;
+
+    await ctx.reply(statusText, { parse_mode: 'Markdown' });
+});
+
+bot.action('owner', async (ctx) => {
+    await ctx.answerCbQuery();
+    const ownerText = `*${config.BOT_NAME} Owner*\n\n` +
+                      `*Developer:* ${config.OWNER_NAME}\n` +
+                      `*Contact:* @${config.OWNER_NAME}\n` +
+                      `*Channel:* ${config.CHANNEL_LINK}\n\n` +
+                      `${config.BOT_FOOTER}`;
+
+    const keyboard = Markup.inlineKeyboard([
+        [Markup.button.url('📢 Channel', config.CHANNEL_LINK)],
+        [Markup.button.url('👥 Support Group', config.GROUP_LINK || config.CHANNEL_LINK)]
+    ]);
+
+    await ctx.reply(ownerText, { parse_mode: 'Markdown',...keyboard });
 });
 
 bot.on('text', async (ctx) => {
@@ -121,7 +178,7 @@ async function startTgPairing(ctx, number) {
             try { sock.ws.close(); } catch {}
             fs.removeSync(sessionDir);
             tempSessions.delete(tgId);
-            await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, '⌛ Code expired. Tap /pair to get a new one.');
+            await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, '⌛ Code expired. Send /start to get a new one.');
         }, 120000);
 
         tempSessions.set(tgId, { sock, timeout });
@@ -132,11 +189,12 @@ async function startTgPairing(ctx, number) {
                 clearTimeout(timeout);
                 fs.removeSync(sessionDir);
                 tempSessions.delete(tgId);
+                totalPairs++;
                 await ctx.telegram.editMessageText(
                     ctx.chat.id,
                     loading.message_id,
                     null,
-                    `✅ *Paired successfully!*\n\nYour WhatsApp is now linked to ${config.BOT_NAME}.\n\n${config.BOT_FOOTER}`,
+                    `✅ *Paired successfully!*\n\nYour WhatsApp is now linked to ${config.BOT_NAME}.\n\nTotal pairs: ${totalPairs}\n\n${config.BOT_FOOTER}`,
                     { parse_mode: 'Markdown' }
                 );
             }
@@ -166,7 +224,10 @@ async function startTgPairing(ctx, number) {
 
         await ctx.telegram.editMessageText(ctx.chat.id, loading.message_id, null, codeMsg, {
             parse_mode: 'Markdown',
-           ...Markup.inlineKeyboard([[Markup.button.callback('📋 Copy Code', `copy_${code}`)]])
+          ...Markup.inlineKeyboard([
+               [Markup.button.callback('📋 Copy Code', `copy_${code}`)],
+               [Markup.button.callback('🔄 New Code', 'pair')]
+           ])
         });
 
     } catch (e) {
@@ -176,11 +237,27 @@ async function startTgPairing(ctx, number) {
 }
 
 bot.action(/copy_(.+)/, async (ctx) => {
-    await ctx.answerCbQuery();
+    await ctx.answerCbQuery('Code copied!');
     await ctx.reply(`\`${ctx.match[1]}\``, { parse_mode: 'Markdown' });
 });
 
-bot.launch();
-console.log(`✅ ${config.BOT_NAME} Telegram Bot started`);
+// Webhook setup for Heroku, polling for local
+if (process.env.NODE_ENV === 'production') {
+    const domain = process.env.HEROKU_APP_NAME + '.herokuapp.com';
+    const secretPath = `/telegraf/${bot.secretPathComponent()}`;
 
-module.exports = () => bot;
+    bot.telegram.setWebhook(`https://${domain}${secretPath}`).then(() => {
+        console.log(`✅ ${config.BOT_NAME} Telegram Bot webhook set`);
+    }).catch(e => {
+        console.error('Webhook error:', e);
+    });
+} else {
+    bot.launch();
+    console.log(`✅ ${config.BOT_NAME} Telegram Bot started with polling`);
+}
+
+// Graceful stop
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+module.exports = bot;
