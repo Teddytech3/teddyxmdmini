@@ -206,28 +206,42 @@ async function startBot(number, res = null, forceNew = false) {
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
             },
             printQRInTerminal: false,
-            usePairingCode: true,
             browser: Browsers.macOS('Safari'),
-            logger: pino({ level: 'silent' })
+            logger: pino({ level: 'silent' }),
+            syncFullHistory: false,
+            markOnlineOnConnect: false
         });
 
         activeSockets.set(sanitizedNumber, conn);
 
+        // ================= PAIRING CODE LOGIC FOR @alannxd/baileys =================
         if ((!existingSession || forceNew) && res) {
-            await delay(2000);
-            try {
-                const code = await conn.requestPairingCode(sanitizedNumber);
-                console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
-                if (!res.headersSent) res.json({
-                    code,
-                    message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
-                    expires: '2 minutes'
-                });
-            } catch (e) {
-                console.log('❌ Pairing code error:', e.message);
-                if (!res.headersSent) res.json({ error: 'Failed to generate code: ' + e.message });
+            await delay(3000); // wait for socket init
+
+            // Wait for connection to be ready
+            if (!conn.authState.creds.registered) {
+                try {
+                    const code = await conn.requestPairingCode(sanitizedNumber);
+                    console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
+
+                    if (!res.headersSent) {
+                        res.json({
+                            code,
+                            number: sanitizedNumber,
+                            message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
+                            expires_in: '60 seconds'
+                        });
+                    }
+                } catch (e) {
+                    console.log('❌ Pairing code error:', e.message);
+                    if (!res.headersSent) res.json({ error: 'Failed to generate code: ' + e.message });
+                }
+            } else {
+                console.log('Session already registered');
+                if (!res.headersSent) res.json({ error: 'Number already linked. Delete session to relink.' });
             }
         }
+        // ========================================================================
 
         conn.ev.on('creds.update', async () => {
             await saveCreds();
@@ -243,7 +257,7 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(`✅ Connected: ${sanitizedNumber}`);
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // ================= AUTO FOLLOW NEWSLETTER - ALANNXD BAILEYS =================
+                // ================= AUTO FOLLOW NEWSLETTER - @alannxd/baileys =================
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
@@ -273,6 +287,7 @@ async function startBot(number, res = null, forceNew = false) {
             }
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
+                console.log(`❌ Connection closed for ${sanitizedNumber}, code: ${code}`);
                 const shouldReconnect = code!== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
                 else {
@@ -329,10 +344,6 @@ async function startBot(number, res = null, forceNew = false) {
                             if (statusParticipant.endsWith('@lid')) {
                                 const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
                                 if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
-                                else {
-                                    const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
-                                    if (resolved) realJid = resolved;
-                                }
                             }
                             const resolvedKey = { remoteJid: 'status@broadcast', id: mek.key.id, participant: realJid };
                             if (shouldRead) await conn.readMessages([resolvedKey]);
@@ -372,7 +383,7 @@ async function startBot(number, res = null, forceNew = false) {
     } catch (e) {}
 })();
 
-// ================= API ROUTES ONLY =================
+// ================= API ROUTES =================
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
