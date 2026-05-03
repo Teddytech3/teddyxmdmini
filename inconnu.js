@@ -36,7 +36,7 @@ connectdb();
 require('./telegram');
 
 const activeSockets = new Map();
-const reactedNewsletters = new Set(); // Newsletter dedup
+const reactedNewsletters = new Set();
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
@@ -138,7 +138,6 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 
         await incrementStats(botNumber, 'commandsUsed').catch(() => {});
 
-        // Enhanced reply with presence
         const reply = async (text) => {
             if (autoRecord &&!fromMe) {
                 await conn.sendPresenceUpdate('recording', from).catch(() => {});
@@ -178,16 +177,10 @@ async function startBot(number, res = null, forceNew = false) {
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
 
     try {
-        // CLEAR OLD SESSION IF FORCE NEW
         if (forceNew) {
             console.log(`⚡ ${config.BOT_NAME}: Clearing old session for ${sanitizedNumber}`);
-
             await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
-
-            if (fs.existsSync(sessionDir)) {
-                fs.removeSync(sessionDir);
-            }
-
+            if (fs.existsSync(sessionDir)) fs.removeSync(sessionDir);
             if (activeSockets.has(sanitizedNumber)) {
                 try {
                     const oldSocket = activeSockets.get(sanitizedNumber);
@@ -196,7 +189,6 @@ async function startBot(number, res = null, forceNew = false) {
                 } catch {}
                 activeSockets.delete(sanitizedNumber);
             }
-
             await delay(1000);
         }
 
@@ -221,7 +213,6 @@ async function startBot(number, res = null, forceNew = false) {
 
         activeSockets.set(sanitizedNumber, conn);
 
-        // Request pairing code immediately for new sessions
         if ((!existingSession || forceNew) && res) {
             await delay(2000);
             try {
@@ -252,10 +243,11 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(`✅ Connected: ${sanitizedNumber}`);
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // ================= AUTO FOLLOW NEWSLETTER - OFFICIAL BAILEYS 6.7.18 =================
+                // ================= AUTO FOLLOW NEWSLETTER - ALANNXD BAILEYS =================
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
+                        // @alannxd/baileys uses newsletterMetadata
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
 
                         if (!meta ||!meta.viewer_metadata) {
@@ -307,18 +299,11 @@ async function startBot(number, res = null, forceNew = false) {
                     if (channelReact) {
                         try {
                             const serverId = mek.message?.newsletterServerId || mek.key.id;
-
-                            // DEDUP CHECK: Only react once per message
                             const uniqueKey = `${from}_${serverId}`;
-                            if (reactedNewsletters.has(uniqueKey)) {
-                                continue;
-                            }
+                            if (reactedNewsletters.has(uniqueKey)) continue;
                             reactedNewsletters.add(uniqueKey);
-
-                            // Clear old entries after 10 mins
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
 
-                            // WhatsApp-approved reactions only
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
