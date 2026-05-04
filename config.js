@@ -10,7 +10,7 @@ module.exports = {
     // 1. BASE CONFIGURATION (Session & Database)
     // ===========================================================
     SESSION_ID: process.env.SESSION_ID || "TEDDY-XMD", 
-    MONGODB_URI: process.env.MONGODB_URI || 'mongodb://atlas-sql-69f8393837eebff58e04d5cc-y0wqv2.a.query.mongodb.net/sample_mflix?ssl=true&authSource=admin',
+    MONGODB_URI: process.env.MONGODB_URI || 'mongodb://atlas-sql-69f8393837eebff58e04d5cc-y0wqv2.a.query.mongodb.net/',
     
     // ===========================================================
     // 2. BOT INFORMATION
