@@ -38,13 +38,14 @@ const reactedNewsletters = new Set();
 const userConfigCache = new Map();
 const reconnectAttempts = new Map();
 const messageStore = new Map(); // For antidelete
+global.antilink = global.antilink || {}; // For antilink toggle
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-      .filter(f => f.endsWith('.js'))
-      .forEach(f => {
+    .filter(f => f.endsWith('.js'))
+    .forEach(f => {
             try { require(path.join(pluginsDir, f)); }
             catch (e) { console.error(`⚠️ Plugin ${f}:`, e.message); }
         });
@@ -281,10 +282,8 @@ async function startBot(number, res = null, forceNew = false) {
             // Store messages for antidelete
             for (const msg of messages) {
                 if (msg.key.fromMe ||!msg.message) continue;
-
                 const messageId = msg.key.id;
                 const chatId = msg.key.remoteJid;
-
                 messageStore.set(messageId, {
                     chat: chatId,
                     sender: msg.key.participant || msg.key.remoteJid,
@@ -292,7 +291,6 @@ async function startBot(number, res = null, forceNew = false) {
                     timestamp: msg.messageTimestamp,
                     pushName: msg.pushName || 'Unknown'
                 });
-
                 setTimeout(() => messageStore.delete(messageId), 3600000);
             }
 
@@ -305,52 +303,73 @@ async function startBot(number, res = null, forceNew = false) {
 
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
+                const sender = mek.key.participant || mek.key.remoteJid;
+                const isGroup = from.endsWith('@g.us');
+
+                // Get admin status for groups
+                if (isGroup) {
+                    try {
+                        const groupMetadata = await conn.groupMetadata(from);
+                        const participants = groupMetadata.participants;
+                        mek.isAdmin = participants.find(p => p.id === sender)?.admin!= null;
+                        mek.isBotAdmin = participants.find(p => p.id === conn.user.id)?.admin!= null;
+                    } catch {
+                        mek.isAdmin = false;
+                        mek.isBotAdmin = false;
+                    }
+                }
 
                 // ============ NEWSLETTER AUTO REACT ============
                 if (from?.endsWith('@newsletter')) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
-
                     if (channelReact && from === config.NEWSLETTER_JID) {
                         try {
                             const serverId = mek.message?.messageContextInfo?.messageSecret ||
                                            mek.messageStubParameters?.[0] ||
                                            mek.key.id;
-
                             if (!serverId) continue;
-
                             const uniqueKey = `${from}_${serverId}`;
                             if (reactedNewsletters.has(uniqueKey)) continue;
                             reactedNewsletters.add(uniqueKey);
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
-
                             const following = await isFollowingNewsletter(conn, from);
                             if (!following) continue;
-
                             const approvedEmojis = ['❤️','👍','🔥','💯','🙏','😂','😮','😢','🎉'];
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥')
-                           .split(',')
-                           .map(e => e.trim())
-                           .filter(e => approvedEmojis.includes(e));
-
+                        .split(',').map(e => e.trim()).filter(e => approvedEmojis.includes(e));
                             if (channelEmojis.length === 0) channelEmojis.push('❤️');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)];
-
                             await conn.newsletterReactMessage(from, serverId, emoji);
                             console.log(`✅ Newsletter react: ${emoji} on ${serverId}`);
-
                         } catch (e) {
                             console.log('❌ Newsletter react error:', e.message);
                         }
                     }
                     continue;
                 }
-                // =====================================================
 
                 if (from === 'status@broadcast') {
                     if (config.AUTO_READ_STATUS === 'true') {
                         conn.readMessages([mek.key]).catch(() => {});
                     }
                     continue;
+                }
+
+                // Run plugin "all" handlers first - for antilink, etc
+                for (const plugin of commands) {
+                    if (plugin.all && typeof plugin.all === 'function') {
+                        try {
+                            await plugin.all(conn, mek, mek, {
+                                from, sender, isGroup,
+                                isAdmin: mek.isAdmin,
+                                isBotAdmin: mek.isBotAdmin,
+                                isOwner: mek.fromMe || sender.replace(/[^0-9]/g, '') === config.OWNER_NUMBER.replace(/[^0-9]/g, ''),
+                                reply: async (text) => conn.sendMessage(from, { text }, { quoted: mek })
+                            });
+                        } catch (e) {
+                            console.log(`Plugin all error ${plugin.name}:`, e.message);
+                        }
+                    }
                 }
 
                 handleMessage(conn, mek, sanitizedNumber, userConfig);
