@@ -37,8 +37,8 @@ const activeSockets = new Map();
 const reactedNewsletters = new Set();
 const userConfigCache = new Map();
 const reconnectAttempts = new Map();
-const messageStore = new Map(); // For antidelete
-global.antilink = global.antilink || {}; // For antilink toggle
+const messageStore = new Map();
+global.antilink = global.antilink || {};
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
@@ -157,10 +157,12 @@ async function startBot(number, res = null, forceNew = false) {
             reconnectAttempts.delete(sanitizedNumber);
         }
 
-        const existingSession = await getSessionFromMongoDB(sanitizedNumber).catch(() => null);
-        if (existingSession &&!forceNew) {
-            fs.ensureDirSync(sessionDir);
-            fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
+        if (!forceNew) {
+            const existingSession = await getSessionFromMongoDB(sanitizedNumber).catch(() => null);
+            if (existingSession) {
+                fs.ensureDirSync(sessionDir);
+                fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
+            }
         }
 
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -173,11 +175,11 @@ async function startBot(number, res = null, forceNew = false) {
             },
             printQRInTerminal: false,
             logger: logger,
-            connectTimeoutMs: 30000,
+            connectTimeoutMs: 60000,
             defaultQueryTimeoutMs: 0,
             keepAliveIntervalMs: 15000,
             emitOwnEvents: false,
-            fireInitQueries: false,
+            fireInitQueries: true,
             generateHighQualityLinkPreview: false,
             syncFullHistory: false,
             markOnlineOnConnect: false,
@@ -188,18 +190,29 @@ async function startBot(number, res = null, forceNew = false) {
         global.sock = conn;
         reconnectAttempts.set(sanitizedNumber, 0);
 
-        if ((!existingSession || forceNew) && res) {
+        // FIXED PAIRING CODE LOGIC
+        if (res && forceNew) {
             console.log(`🔐 Requesting code for ${sanitizedNumber}`);
+            await delay(2000);
+            
             try {
-                if (!conn.authState.creds.registered) {
+                if (conn.authState.creds.registered) {
+                    console.log(`⚠️ ${sanitizedNumber} already registered`);
+                    if (!res.headersSent) {
+                        res.json({ error: 'Number already linked. Delete session first' });
+                    }
+                } else {
                     const code = await conn.requestPairingCode(sanitizedNumber);
                     console.log(`✅ PAIRING CODE: ${code}`);
-                    if (!res.headersSent) res.json({ code, number: sanitizedNumber, expires: '60s' });
-                } else {
-                    if (!res.headersSent) res.json({ error: 'Already linked' });
+                    if (!res.headersSent) {
+                        res.json({ code, number: sanitizedNumber, expires: '60s' });
+                    }
                 }
             } catch (e) {
-                if (!res.headersSent) res.status(500).json({ error: e.message });
+                console.log('Pairing code error:', e.message);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to generate code: ' + e.message });
+                }
             }
         }
 
@@ -270,7 +283,6 @@ async function startBot(number, res = null, forceNew = false) {
                 }
             }
         });
-        // ===================================================
 
         conn.ev.on('group-participants.update', (update) => {
             groupEvents(conn, update).catch(() => {});
@@ -433,11 +445,13 @@ async function startBot(number, res = null, forceNew = false) {
                 }
             }
         });
-        // =====================================================
+
+        return conn;
 
     } catch (err) {
         console.error('❌ startBot error:', err.message);
         if (res &&!res.headersSent) res.json({ error: err.message });
+        throw err;
     }
 }
 
@@ -470,7 +484,19 @@ setInterval(() => {
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
-    await startBot(number, res, true);
+    
+    const cleanNum = number.replace(/[^0-9]/g, '');
+    if (cleanNum.length < 10 || cleanNum.length > 15) {
+        return res.json({ error: 'Invalid number format. Use 254712345678' });
+    }
+    
+    try {
+        await startBot(cleanNum, res, true);
+    } catch (e) {
+        if (!res.headersSent) {
+            res.status(500).json({ error: e.message });
+        }
+    }
 });
 
 router.get('/status', (req, res) => {
