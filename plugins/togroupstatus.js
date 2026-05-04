@@ -1,107 +1,209 @@
-const { commands } = require('../inconnuboy')
-const { downloadMediaMessage } = require('./lib')
-const ffmpeg = require('fluent-ffmpeg')
-const fs = require('fs')
-const path = require('path')
-const os = require('os')
+// ============================================================
+// TEDDY-XMD — plugins/togroupstatus.js
+// Group Status / Text Status / Media Status
+// ============================================================
 
-commands.push({
-  pattern: "togroupstatus",
+const crypto = require('crypto')
+const { PassThrough } = require('stream')
+const ffmpeg = require('fluent-ffmpeg')
+const {
+  generateWAMessageContent,
+  generateWAMessageFromContent,
+  downloadContentFromMessage,
+} = require('@whiskeysockets/baileys')
+
+const PURPLE_COLOR = '#9C27B0'
+const DEFAULT_CAPTION = '_⚡ Powered by TEDDY-XMD_'
+
+module.exports = {
+  name: "togroupstatus",
   alias: ["groupstatus", "statusgroup", "togcstatus"],
-  react: "📢",
+  desc: "Send text or quoted media to group status. Owner only.",
   category: "group",
-  description: "Send text or quoted media to group status. Owner only.",
-  function: async (conn, mek, m, { from, isGroup, isOwner, text: q, reply }) => {
+  react: "📢",
+  start: async (conn, mek, m, { from, isGroup, isOwner, text: userText, reply }) => {
 
     if (!isGroup) return reply("❌ Group only command!")
     if (!isOwner) return reply("❌ Owner Only Command!")
 
-    const quoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage
-    const quotedParticipant = mek.message?.extendedTextMessage?.contextInfo?.participant
-
-    const hasQuoted = !!quoted
-
-    if (!q && !hasQuoted) {
-      return reply(
-        `📌 *Usage:*\n` +
-        `• .togroupstatus <text>\n` +
-        `• Reply to image/video/audio with .togroupstatus <caption>\n` +
-        `• Or just .togroupstatus to forward quoted media`
-      )
-    }
-
-    // Helper: format video buffer to mp4 using ffmpeg
-    const formatVideo = (buffer) => new Promise((resolve, reject) => {
-      const tmpIn = path.join(os.tmpdir(), `vin_${Date.now()}.mp4`)
-      const tmpOut = path.join(os.tmpdir(), `vout_${Date.now()}.mp4`)
-      fs.writeFileSync(tmpIn, buffer)
-      ffmpeg(tmpIn)
-        .outputOptions(['-c:v libx264', '-c:a aac', '-movflags +faststart'])
-        .save(tmpOut)
-        .on('end', () => { resolve(fs.readFileSync(tmpOut)); fs.unlinkSync(tmpIn); fs.unlinkSync(tmpOut) })
-        .on('error', reject)
-    })
-
-    // Helper: format audio buffer to mp4/aac using ffmpeg
-    const formatAudio = (buffer) => new Promise((resolve, reject) => {
-      const tmpIn = path.join(os.tmpdir(), `ain_${Date.now()}.ogg`)
-      const tmpOut = path.join(os.tmpdir(), `aout_${Date.now()}.mp4`)
-      fs.writeFileSync(tmpIn, buffer)
-      ffmpeg(tmpIn)
-        .outputOptions(['-c:a aac'])
-        .save(tmpOut)
-        .on('end', () => { resolve(fs.readFileSync(tmpOut)); fs.unlinkSync(tmpIn); fs.unlinkSync(tmpOut) })
-        .on('error', reject)
-    })
-
     try {
-      let statusPayload = {}
+      const ctxInfo = mek.message?.extendedTextMessage?.contextInfo
+      const quotedMsg = ctxInfo?.quotedMessage || null
+      const hasQuoted =!!quotedMsg
 
-      if (hasQuoted) {
-        const quotedMsg = { message: quoted }
-
-        if (quoted?.imageMessage) {
-          const caption = q || quoted.imageMessage.caption || ""
-          const buffer = await downloadMediaMessage(quotedMsg, "buffer", {})
-          statusPayload = { image: buffer, mimetype: "image/jpeg" }
-          if (caption) statusPayload.caption = caption
-
-        } else if (quoted?.videoMessage) {
-          const caption = q || quoted.videoMessage.caption || ""
-          let buffer = await downloadMediaMessage(quotedMsg, "buffer", {})
-          buffer = await formatVideo(buffer)
-          statusPayload = { video: buffer, mimetype: "video/mp4" }
-          if (caption) statusPayload.caption = caption
-
-        } else if (quoted?.audioMessage) {
-          let buffer = await downloadMediaMessage(quotedMsg, "buffer", {})
-          buffer = await formatAudio(buffer)
-          statusPayload = { audio: buffer, mimetype: "audio/mp4", ptt: true }
-
-        } else if (quoted?.conversation || quoted?.extendedTextMessage?.text) {
-          statusPayload.text = quoted.conversation || quoted.extendedTextMessage.text
-
-        } else {
-          return reply("❌ Unsupported media type for group status.")
+      // ── TEXT STATUS ────────────────────────────────────────
+      if (!hasQuoted) {
+        if (!userText) {
+          return reply(
+            '📝 *TEDDY-XMD Group Status*\n' +
+            '• Reply to image/video/audio with:\n' +
+            ' `.togroupstatus [optional caption]`\n' +
+            '• Or send text only:\n' +
+            ' `.togroupstatus Your text here`'
+          )
         }
-
-        if (q && !statusPayload.caption && !statusPayload.text) {
-          statusPayload.caption = q
-        }
-      } else {
-        statusPayload.text = q
+        await reply('⏳ Posting text group status...')
+        await groupStatus(conn, from, { text: userText, backgroundColor: PURPLE_COLOR })
+        return reply('✅ Text group status posted!')
       }
 
-      // Send as status to group
-      await conn.sendMessage('status@broadcast', statusPayload, {
-        statusJidList: [from]
-      })
+      const mtype = Object.keys(quotedMsg)[0] || ''
 
-      await m.react("✅")
-    } catch (error) {
-      console.error("togroupstatus error:", error)
-      await m.react("❌")
-      return reply(`❌ Error sending group status: ${error.message}`)
+      // ── IMAGE ──────────────────────────────────────────────
+      if (/image/i.test(mtype)) {
+        await reply('⏳ Posting image group status...')
+        const buf = await downloadMedia(quotedMsg, 'image')
+        const quotedCaption = quotedMsg.imageMessage?.caption || ''
+        const finalCaption = userText || quotedCaption || DEFAULT_CAPTION
+        await groupStatus(conn, from, { image: buf, caption: finalCaption })
+        return reply('✅ Image group status posted!')
+      }
+
+      // ── VIDEO ──────────────────────────────────────────────
+      if (/video/i.test(mtype)) {
+        await reply('⏳ Posting video group status...')
+        const buf = await downloadMedia(quotedMsg, 'video')
+        const quotedCaption = quotedMsg.videoMessage?.caption || ''
+        const finalCaption = userText || quotedCaption || DEFAULT_CAPTION
+        await groupStatus(conn, from, { video: buf, caption: finalCaption })
+        return reply('✅ Video group status posted!')
+      }
+
+      // ── AUDIO / VOICE ──────────────────────────────────────
+      if (/audio/i.test(mtype)) {
+        await reply('⏳ Posting audio group status...')
+        const buf = await downloadMedia(quotedMsg, 'audio')
+
+        let vn = buf
+        try { vn = await toVN(buf) } catch (e) { console.log('toVN skipped') }
+
+        let waveform
+        try { waveform = await generateWaveform(buf) } catch (e) { console.log('waveform skipped') }
+
+        await groupStatus(conn, from, {
+          audio: vn,
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+          waveform,
+        })
+        return reply('✅ Audio group status posted!')
+      }
+
+      // ── STICKER ────────────────────────────────────────────
+      if (/sticker/i.test(mtype)) {
+        await reply('⏳ Posting sticker group status...')
+        const buf = await downloadMedia(quotedMsg, 'sticker')
+        await groupStatus(conn, from, { image: buf, caption: DEFAULT_CAPTION })
+        return reply('✅ Sticker group status posted!')
+      }
+
+      return reply('❌ Unsupported media type.')
+
+    } catch (e) {
+      console.error('togroupstatus error:', e)
+      return reply('❌ Error: ' + (e.message || e))
     }
   }
-})
+}
+
+// ==================== HELPERS ====================
+
+async function downloadMedia(msg, type) {
+  const mediaMsg = msg[`${type}Message`] || msg
+  const stream = await downloadContentFromMessage(mediaMsg, type)
+  const chunks = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return Buffer.concat(chunks)
+}
+
+async function groupStatus(conn, jid, content) {
+  const { backgroundColor } = content
+  delete content.backgroundColor
+
+  const inside = await generateWAMessageContent(content, {
+    upload: conn.waUploadToServer,
+    backgroundColor: backgroundColor || PURPLE_COLOR,
+  })
+
+  const secret = crypto.randomBytes(32)
+
+  const msg = generateWAMessageFromContent(jid, {
+    messageContextInfo: { messageSecret: secret },
+    groupStatusMessageV2: {
+      message: {
+       ...inside,
+        messageContextInfo: { messageSecret: secret },
+      },
+    },
+  }, {})
+
+  await conn.relayMessage(jid, msg.message, { messageId: msg.key.id })
+}
+
+async function toVN(buffer) {
+  return new Promise((resolve, reject) => {
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const chunks = []
+
+    output.on('data', chunk => chunks.push(chunk))
+    output.on('end', () => resolve(Buffer.concat(chunks)))
+    output.on('error', reject)
+
+    input.end(buffer)
+
+    ffmpeg(input)
+     .noVideo()
+     .audioCodec('libopus')
+     .audioChannels(1)
+     .audioFrequency(48000)
+     .format('ogg')
+     .on('error', reject)
+     .pipe(output, { end: true })
+  })
+}
+
+async function generateWaveform(buffer, bars = 64) {
+  return new Promise((resolve, reject) => {
+    const input = new PassThrough()
+    const output = new PassThrough()
+    const chunks = []
+
+    output.on('data', chunk => chunks.push(chunk))
+    output.on('error', reject)
+    output.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks)
+        if (!raw.length) return resolve(undefined)
+
+        const sampleCount = Math.floor(raw.length / 2)
+        const amplitudes = []
+        for (let i = 0; i < sampleCount; i++) {
+          amplitudes.push(Math.abs(raw.readInt16LE(i * 2)) / 32768)
+        }
+
+        const size = Math.floor(amplitudes.length / bars)
+        const barsData = Array.from({ length: bars }, (_, i) => {
+          const slice = amplitudes.slice(i * size, (i + 1) * size)
+          return slice.length? slice.reduce((a, b) => a + b) / slice.length : 0
+        })
+
+        const max = Math.max(...barsData) || 1
+        const normalized = barsData.map(v => Math.floor((v / max) * 100))
+        resolve(Buffer.from(normalized).toString('base64'))
+      } catch (err) {
+        reject(err)
+      }
+    })
+
+    input.end(buffer)
+
+    ffmpeg(input)
+     .noVideo()
+     .audioChannels(1)
+     .audioFrequency(16000)
+     .format('s16le')
+     .on('error', reject)
+     .pipe(output, { end: true })
+  })
+}
