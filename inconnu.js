@@ -28,15 +28,24 @@ const fs = require('fs-extra');
 const pino = require('pino');
 const express = require('express');
 
-const router = express.Router();
 const app = express();
+const router = express.Router();
+
 app.use(express.json());
 app.use(express.static('public'));
+app.use(require('cors')());
 
 global.prefix = config.PREFIX || '.';
 
 connectdb().catch(e => console.log('⚠️ DB error:', e.message));
-require('./telegram');
+
+// FIXED: Don't call app.use() on telegram module - just require it
+try {
+    require('./telegram');
+    console.log('✅ Telegram module loaded');
+} catch (e) {
+    console.log('❌ TELEGRAM_BOT_TOKEN missing or revoked. Telegram bot disabled.');
+}
 
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
@@ -188,17 +197,17 @@ async function startBot(number, res = null, forceNew = false) {
             generateHighQualityLinkPreview: false,
             syncFullHistory: false,
             markOnlineOnConnect: false,
-            browser: Browsers.macOS('Chrome'), // FIXED: Chrome needed for alannxd fork push notification
+            browser: Browsers.macOS('Chrome'), // CRITICAL: Chrome triggers push on alannxd fork
         });
 
         activeSockets.set(sanitizedNumber, conn);
         global.sock = conn;
         reconnectAttempts.set(sanitizedNumber, 0);
 
-        // FIXED PAIRING CODE LOGIC FOR ALANNXD FORK
+        // PAIRING CODE LOGIC - FIXED FOR ALANNXD
         if (res && forceNew) {
             console.log(`🔐 Requesting code for ${sanitizedNumber}`);
-            await delay(2000); // Critical: wait for socket init
+            await delay(2000); // Wait for socket ready
             
             try {
                 if (conn.authState.creds.registered) {
@@ -210,7 +219,7 @@ async function startBot(number, res = null, forceNew = false) {
                 } else {
                     const code = await conn.requestPairingCode(sanitizedNumber);
                     console.log(`✅ PAIRING CODE: ${code}`);
-                    await conn.end(); // Critical: close socket to release lock
+                    await conn.end(); // Close to release lock and send push
                     if (!res.headersSent) {
                         return res.json({ 
                             code: code.match(/.{1,4}/g)?.join('-') || code, 
