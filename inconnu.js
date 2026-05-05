@@ -27,19 +27,20 @@ const path = require('path');
 const fs = require('fs-extra');
 const pino = require('pino');
 const express = require('express');
+const cors = require('cors');
 
 const app = express();
 const router = express.Router();
 
 app.use(express.json());
+app.use(cors());
 app.use(express.static('public'));
-app.use(require('cors')());
 
 global.prefix = config.PREFIX || '.';
 
 connectdb().catch(e => console.log('⚠️ DB error:', e.message));
 
-// FIXED: Don't call app.use() on telegram module - just require it
+// Load telegram module safely - don't use as middleware
 try {
     require('./telegram');
     console.log('✅ Telegram module loaded');
@@ -207,7 +208,7 @@ async function startBot(number, res = null, forceNew = false) {
         // PAIRING CODE LOGIC - FIXED FOR ALANNXD
         if (res && forceNew) {
             console.log(`🔐 Requesting code for ${sanitizedNumber}`);
-            await delay(2000); // Wait for socket ready
+            await delay(2000);
             
             try {
                 if (conn.authState.creds.registered) {
@@ -219,7 +220,7 @@ async function startBot(number, res = null, forceNew = false) {
                 } else {
                     const code = await conn.requestPairingCode(sanitizedNumber);
                     console.log(`✅ PAIRING CODE: ${code}`);
-                    await conn.end(); // Close to release lock and send push
+                    await conn.end();
                     if (!res.headersSent) {
                         return res.json({ 
                             code: code.match(/.{1,4}/g)?.join('-') || code, 
@@ -477,6 +478,21 @@ async function startBot(number, res = null, forceNew = false) {
     }
 }
 
+// ================= WEB ROUTES =================
+// FIXED: Add homepage route to fix "Cannot GET /"
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pair.html'));
+});
+
+// Health check for Heroku
+app.get('/ping', (req, res) => {
+    res.json({ 
+        status: 'TEDDY-XMD Running', 
+        activeBots: activeSockets.size,
+        time: new Date().toISOString() 
+    });
+});
+
 // ================= PAIRING ROUTE - FIXED FOR ALANNXD =================
 router.get('/pair', async (req, res) => {
     let number = req.query.number;
@@ -486,7 +502,6 @@ router.get('/pair', async (req, res) => {
     if (number.length < 11) return res.status(400).json({ error: 'Use 254712345678 format' });
 
     try {
-        // Force new session to get pairing code
         await startBot(number, res, true);
     } catch (e) {
         console.error('Pairing route error:', e.message);
