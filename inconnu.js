@@ -9,6 +9,8 @@ const {
 const config = require('./config');
 const { commands } = require('./inconnuboy');
 const { sms } = require('./lib/msg');
+const { saveMessage } = require('./data');
+const { AntiDelete } = require('./lib/antidel');
 const {
     connectdb,
     saveSessionToMongoDB,
@@ -66,6 +68,11 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         if (!mek.message) return;
         if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
         if (mek.isBaileys) return;
+
+        // ── SAVE MESSAGE FOR ANTIDELETE ──────────────────────────────────────
+        // Must happen before any early returns so deleted messages can be retrieved.
+        try { await saveMessage(mek); } catch (_) {}
+        // ─────────────────────────────────────────────────────────────────────
 
         const from = mek.chat;
         const sender = mek.sender;
@@ -386,6 +393,16 @@ async function startBot(number, res = null, forceNew = false) {
                 await handleMessage(conn, mek, sanitizedNumber, userConfig);
             }
         });
+
+        // ── ANTIDELETE: listen for message deletions ──────────────────────────
+        conn.ev.on('messages.update', async (updates) => {
+            try {
+                await AntiDelete(conn, updates);
+            } catch (e) {
+                console.error('messages.update AntiDelete error:', e.message);
+            }
+        });
+        // ─────────────────────────────────────────────────────────────────────
 
     } catch (err) {
         console.error('❌ Error in startBot:', err);
