@@ -31,282 +31,74 @@ cmd({
     await conn.sendPresenceUpdate('composing', from);
     const ping = Date.now() - start;
 
-    const customMenu = `
-*╭───〘 ⚡ TEDDY-XMD 〙───*
-*│*
-*│ 👤 User : @${sender.split("@")[0]}*
-*│ ⚙️ Prefix : ${prefix}*
-*│ 🌐 Mode : ${mode}*
-*│ ⏱️ Uptime : ${uptime()}*
-*│ 📡 Speed : ${ping}ms*
-*│*
-*╰────────────────*
+    const menu = `
+╭━━〔 *⚡ TEDDY-XMD* 〕━━╮
+┃ 👤 User : @${sender.split("@")[0]}
+┃ ⚙️ Prefix : ${prefix}
+┃ 🌐 Mode : ${mode}
+┃ ⏱️ Uptime : ${uptime()}
+┃ 📡 Speed : ${ping}ms
+╰━━━━━━━━━━━━╯
 
-*╭─〔 👑 OWNER MENU 〕*
-*│ • ${prefix}setprefix*
-*│ • ${prefix}mode*
-*│ • ${prefix}autorecording*
-*│ • ${prefix}autotyping*
-*│ • ${prefix}autoread*
-*│ • ${prefix}autostatusview*
-*│ • ${prefix}autobio*
-*│ • ${prefix}anticall*
-*│ • ${prefix}antidelete*
-*│ • ${prefix}broadcast*
-*│ • ${prefix}ch*
-*│ • ${prefix}chatbot*
-*│ • ${prefix}clearchats*
-*│ • ${prefix}forward*
-*│ • ${prefix}getstatusreact*
-*│ • ${prefix}gjid*
-*│ • ${prefix}nulpp*
-*│ • ${prefix}block*
-*│ • ${prefix}unblock*
-*│ • ${prefix}welcome*
-*│ • ${prefix}goodbye*
-*│ • ${prefix}restart*
-*│ • ${prefix}setpp*
-*│ • ${prefix}setstatusreact*
-*│ • ${prefix}shutdown*
-*│ • ${prefix}update*
-*│ • ${prefix}xx*
-*╰────────────────*
+*👑 OWNER*
+  ${prefix}setprefix | ${prefix}mode | ${prefix}autorecording
+  ${prefix}autotyping | ${prefix}autoread | ${prefix}autostatusview
+  ${prefix}anticall | ${prefix}antidelete | ${prefix}broadcast
+  ${prefix}chatbot | ${prefix}restart | ${prefix}update
 
-*╭─〔 👥 GROUP MENU 〕*
-*│ • ${prefix}tagall*
-*│ • ${prefix}online*
-*│ • ${prefix}kick*
-*│ • ${prefix}add*
-*│ • ${prefix}promote*
-*│ • ${prefix}demote*
-*│ • ${prefix}mute*
-*│ • ${prefix}unmute*
-*│ • ${prefix}acceptall*
-*│ • ${prefix}antibad*
-*│ • ${prefix}antilink*
-*│ • ${prefix}antitag*
-*│ • ${prefix}delete*
-*│ • ${prefix}join*
-*│ • ${prefix}left*
-*│ • ${prefix}lockgc*
-*│ • ${prefix}unlockgc*
-*│ • ${prefix}newgroup*
-*│ • ${prefix}rejectall*
-*│ • ${prefix}requestlist*
-*│ • ${prefix}tagadmins*
-*╰────────────────*
+*👥 GROUP*
+  ${prefix}tagall | ${prefix}kick | ${prefix}add | ${prefix}promote
+  ${prefix}demote | ${prefix}mute | ${prefix}unmute | ${prefix}delete
+  ${prefix}antilink | ${prefix}antitag | ${prefix}lockgc | ${prefix}unlockgc
 
-*╭─〔 ⬇️ DOWNLOAD MENU 〕*
-*│ • ${prefix}video*
-*│ • ${prefix}tiktok*
-*│ • ${prefix}fb*
-*│ • ${prefix}play*
-*│ • ${prefix}play2*
-*│ • ${prefix}ig*
-*│ • ${prefix}app*
-*│ • ${prefix}movie*
-*│ • ${prefix}pair*
-*│ • ${prefix}pair2*
-*│ • ${prefix}pindl*
-*│ • ${prefix}gitclone*
-*│ • ${prefix}instagram*
-*╰────────────────*
+*⬇️ DOWNLOAD*
+  ${prefix}play | ${prefix}video | ${prefix}tiktok | ${prefix}fb
+  ${prefix}ig | ${prefix}app | ${prefix}movie | ${prefix}gitclone
 
-*╭─〔 🤖 AI MENU 〕*
-*│ • ${prefix}gpt*
-*│ • ${prefix}imagine*
-*│ • ${prefix}gemini*
-*│ • ${prefix}ai*
-*│ • ${prefix}deepseek*
-*│ • ${prefix}metaai*
-*│ • ${prefix}openai*
-*╰────────────────*
+*🤖 AI*
+  ${prefix}gpt | ${prefix}imagine | ${prefix}gemini | ${prefix}ai
+  ${prefix}deepseek | ${prefix}metaai
 
-*╭─〔 ✨ TOOLS MENU 〕*
-*│ • ${prefix}ping*
-*│ • ${prefix}tempmail*
-*│ • ${prefix}trt*
-*│ • ${prefix}attp*
-*│ • ${prefix}ss*
-*│ • ${prefix}tts*
-*│ • ${prefix}img*
-*│ • ${prefix}tomp3*
-*│ • ${prefix}toptt*
-*│ • ${prefix}s*
-*│ • ${prefix}tiny*
-*│ • ${prefix}getpp*
-*│ • ${prefix}savecontact*
-*│ • ${prefix}tiktoksearch*
-*│ • ${prefix}vv*
-*│ • ${prefix}caption*
-*│ • ${prefix}jid*
-*│ • ${prefix}person*
-*│ • ${prefix}screenshot*
-*│ • ${prefix}tourl*
-*│ • ${prefix}weather*
-*│ • ${prefix}wstalk*
-*╰────────────────*
+*✨ TOOLS*
+  ${prefix}ping | ${prefix}trt | ${prefix}attp | ${prefix}ss
+  ${prefix}tts | ${prefix}img | ${prefix}tomp3 | ${prefix}tourl
+  ${prefix}weather | ${prefix}vv | ${prefix}caption
 
-*╭─〔 🎮 FUN MENU 〕*
-*│ • ${prefix}awoo*
-*│ • ${prefix}bite*
-*│ • ${prefix}blush*
-*│ • ${prefix}bonk*
-*│ • ${prefix}bully*
-*│ • ${prefix}cringe*
-*│ • ${prefix}cry*
-*│ • ${prefix}cuddle*
-*│ • ${prefix}dance*
-*│ • ${prefix}glomp*
-*│ • ${prefix}hack*
-*│ • ${prefix}handhold*
-*│ • ${prefix}happy*
-*│ • ${prefix}highfive*
-*│ • ${prefix}hug*
-*│ • ${prefix}insult*
-*│ • ${prefix}kill*
-*│ • ${prefix}kiss*
-*│ • ${prefix}lick*
-*│ • ${prefix}me*
-*│ • ${prefix}nom*
-*│ • ${prefix}pat*
-*│ • ${prefix}poke*
-*│ • ${prefix}slap*
-*│ • ${prefix}smile*
-*│ • ${prefix}smug*
-*│ • ${prefix}technologia*
-*│ • ${prefix}wave*
-*│ • ${prefix}wink*
-*│ • ${prefix}yeet*
-*╰────────────────*
+*🎮 FUN*
+  ${prefix}hug | ${prefix}kiss | ${prefix}slap | ${prefix}poke
+  ${prefix}insult | ${prefix}hack | ${prefix}dance | ${prefix}cry
 
-*╭─〔 🖼️ LOGO MENU 〕*
-*│ • ${prefix}america*
-*│ • ${prefix}angel*
-*│ • ${prefix}avengers*
-*│ • ${prefix}balloon*
-*│ • ${prefix}beach*
-*│ • ${prefix}blackpink*
-*│ • ${prefix}broken*
-*│ • ${prefix}cartoon*
-*│ • ${prefix}clouds*
-*│ • ${prefix}comic*
-*│ • ${prefix}deadpool*
-*│ • ${prefix}delete*
-*│ • ${prefix}devil*
-*│ • ${prefix}dragonball*
-*│ • ${prefix}firework*
-*│ • ${prefix}fog*
-*│ • ${prefix}football*
-*│ • ${prefix}future*
-*│ • ${prefix}galaxy*
-*│ • ${prefix}glitch*
-*│ • ${prefix}glow*
-*│ • ${prefix}hacker*
-*│ • ${prefix}luxury*
-*│ • ${prefix}maker*
-*│ • ${prefix}marvel*
-*│ • ${prefix}metal*
-*│ • ${prefix}multicolor*
-*│ • ${prefix}naruto*
-*│ • ${prefix}neon*
-*│ • ${prefix}neonglitch*
-*│ • ${prefix}nigeria*
-*│ • ${prefix}pixel*
-*│ • ${prefix}pornhub*
-*│ • ${prefix}sand*
-*│ • ${prefix}shield*
-*│ • ${prefix}shirt*
-*│ • ${prefix}silver*
-*│ • ${prefix}sketch*
-*│ • ${prefix}snow*
-*│ • ${prefix}space*
-*│ • ${prefix}tattoo*
-*│ • ${prefix}thor*
-*│ • ${prefix}tiktok*
-*│ • ${prefix}typo*
-*│ • ${prefix}underwater*
-*│ • ${prefix}vintage*
-*│ • ${prefix}watercolor*
-*│ • ${prefix}wolf*
-*│ • ${prefix}write*
-*╰────────────────*
+*🖼️ LOGO*
+  ${prefix}neon | ${prefix}glitch | ${prefix}galaxy | ${prefix}marvel
+  ${prefix}naruto | ${prefix}blackpink | ${prefix}dragonball
 
-*╭─〔 ⚙️ SETTINGS MENU 〕*
-*│ • ${prefix}always-online*
-*│ • ${prefix}antiviewonce*
-*│ • ${prefix}auto-sticker*
-*│ • ${prefix}autoreact*
-*│ • ${prefix}dashboard*
-*│ • ${prefix}readreceipt*
-*│ • ${prefix}setprefix1*
-*│ • ${prefix}status-react*
-*╰────────────────*
+*⚙️ SETTINGS*
+  ${prefix}always-online | ${prefix}autoreact | ${prefix}dashboard
+  ${prefix}readreceipt | ${prefix}setprefix1
 
-*╭─〔 🔍 SEARCH MENU 〕*
-*│ • ${prefix}define*
-*│ • ${prefix}githubstalk2*
-*│ • ${prefix}shazam*
-*│ • ${prefix}yts*
-*│ • ${prefix}ytstalk*
-*╰────────────────*
+*🔍 SEARCH*
+  ${prefix}define | ${prefix}yts | ${prefix}shazam | ${prefix}ytstalk
 
-*╭─〔 🔌 PLUGIN MENU 〕*
-*│ • ${prefix}deleteplugin*
-*│ • ${prefix}install*
-*│ • ${prefix}pluginlist*
-*╰────────────────*
+*📱 MAIN*
+  ${prefix}alive | ${prefix}menu | ${prefix}owner | ${prefix}repo
+  ${prefix}speed | ${prefix}uptime
 
-*╭─〔 📱 MAIN MENU 〕*
-*│ • ${prefix}alive*
-*│ • ${prefix}fetch*
-*│ • ${prefix}host*
-*│ • ${prefix}menu*
-*│ • ${prefix}owner*
-*│ • ${prefix}quran*
-*│ • ${prefix}repo*
-*│ • ${prefix}save*
-*│ • ${prefix}speed*
-*│ • ${prefix}uptime*
-*╰────────────────*
-
-*╭─〔 🎬 MEDIA MENU 〕*
-*│ • ${prefix}convert*
-*│ • ${prefix}getimage*
-*│ • ${prefix}movieinfo*
-*╰────────────────*
-
-*╭─〔 ℹ️ INFO MENU 〕*
-*│ • ${prefix}praytime*
-*│ • ${prefix}news*
-*│ • ${prefix}githubstalk*
-*│ • ${prefix}list*
-*│ • ${prefix}quranmenu*
-*╰────────────────*
-
-*╭─〔 📦 MISC MENU 〕*
-*│ • ${prefix}vv3*
-*│ • ${prefix}gpass*
-*│ • ${prefix}srepo*
-*│ • ${prefix}vsticker*
-*│ • ${prefix}config*
-*│ • ${prefix}rw*
-*│ • ${prefix}cid*
-*╰────────────────*
-
-*📢 Official Channel*
-https://whatsapp.com/channel/0029Vb6NveDBPzjPa4vIRt3n
-
-*💬 Support Group*
-https://chat.whatsapp.com/CLClgqJIC59GrcI4sRzLu8
-
-*⚡ TEDDY-XMD BOT*
+_⚡ Powered by TEDDY-XMD_
 `;
 
     await conn.sendMessage(from, {
       image: { url: config.IMAGE_PATH || 'https://files.catbox.moe/13nyhx.jpg' },
-      caption: customMenu,
-      contextInfo: { mentionedJid: [sender] }
+      caption: menu,
+      contextInfo: {
+        mentionedJid: [sender],
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+          newsletterJid: '120363421104812135@newsletter',
+          newsletterName: 'TEDDY XMD OFFICIAL',
+          serverMessageId: -1
+        }
+      }
     }, { quoted: m });
 
   } catch (err) {

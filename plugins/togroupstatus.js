@@ -8,7 +8,6 @@ const { PassThrough } = require('stream')
 const ffmpeg = require('fluent-ffmpeg')
 const {
   generateWAMessageContent,
-  generateWAMessageFromContent,
   downloadContentFromMessage,
 } = require('@whiskeysockets/baileys')
 
@@ -43,7 +42,10 @@ module.exports = {
           )
         }
         await reply('⏳ Posting text group status...')
-        await groupStatus(conn, from, { text: userText, backgroundColor: PURPLE_COLOR })
+        await conn.sendMessage(from, {
+          text: userText,
+          statusJid: from
+        })
         return reply('✅ Text group status posted!')
       }
 
@@ -55,7 +57,11 @@ module.exports = {
         const buf = await downloadMedia(quotedMsg, 'image')
         const quotedCaption = quotedMsg.imageMessage?.caption || ''
         const finalCaption = userText || quotedCaption || DEFAULT_CAPTION
-        await groupStatus(conn, from, { image: buf, caption: finalCaption })
+        await conn.sendMessage(from, {
+          image: buf,
+          caption: finalCaption,
+          statusJid: from
+        })
         return reply('✅ Image group status posted!')
       }
 
@@ -65,7 +71,11 @@ module.exports = {
         const buf = await downloadMedia(quotedMsg, 'video')
         const quotedCaption = quotedMsg.videoMessage?.caption || ''
         const finalCaption = userText || quotedCaption || DEFAULT_CAPTION
-        await groupStatus(conn, from, { video: buf, caption: finalCaption })
+        await conn.sendMessage(from, {
+          video: buf,
+          caption: finalCaption,
+          statusJid: from
+        })
         return reply('✅ Video group status posted!')
       }
 
@@ -80,11 +90,12 @@ module.exports = {
         let waveform
         try { waveform = await generateWaveform(buf) } catch (e) { console.log('waveform skipped') }
 
-        await groupStatus(conn, from, {
+        await conn.sendMessage(from, {
           audio: vn,
           mimetype: 'audio/ogg; codecs=opus',
           ptt: true,
           waveform,
+          statusJid: from
         })
         return reply('✅ Audio group status posted!')
       }
@@ -93,7 +104,11 @@ module.exports = {
       if (/sticker/i.test(mtype)) {
         await reply('⏳ Posting sticker group status...')
         const buf = await downloadMedia(quotedMsg, 'sticker')
-        await groupStatus(conn, from, { image: buf, caption: DEFAULT_CAPTION })
+        await conn.sendMessage(from, {
+          image: buf,
+          caption: DEFAULT_CAPTION,
+          statusJid: from
+        })
         return reply('✅ Sticker group status posted!')
       }
 
@@ -116,30 +131,6 @@ async function downloadMedia(msg, type) {
   return Buffer.concat(chunks)
 }
 
-async function groupStatus(conn, jid, content) {
-  const { backgroundColor } = content
-  delete content.backgroundColor
-
-  const inside = await generateWAMessageContent(content, {
-    upload: conn.waUploadToServer,
-    backgroundColor: backgroundColor || PURPLE_COLOR,
-  })
-
-  const secret = crypto.randomBytes(32)
-
-  const msg = generateWAMessageFromContent(jid, {
-    messageContextInfo: { messageSecret: secret },
-    groupStatusMessageV2: {
-      message: {
-       ...inside,
-        messageContextInfo: { messageSecret: secret },
-      },
-    },
-  }, {})
-
-  await conn.relayMessage(jid, msg.message, { messageId: msg.key.id })
-}
-
 async function toVN(buffer) {
   return new Promise((resolve, reject) => {
     const input = new PassThrough()
@@ -153,13 +144,13 @@ async function toVN(buffer) {
     input.end(buffer)
 
     ffmpeg(input)
-     .noVideo()
-     .audioCodec('libopus')
-     .audioChannels(1)
-     .audioFrequency(48000)
-     .format('ogg')
-     .on('error', reject)
-     .pipe(output, { end: true })
+    .noVideo()
+    .audioCodec('libopus')
+    .audioChannels(1)
+    .audioFrequency(48000)
+    .format('ogg')
+    .on('error', reject)
+    .pipe(output, { end: true })
   })
 }
 
@@ -199,11 +190,11 @@ async function generateWaveform(buffer, bars = 64) {
     input.end(buffer)
 
     ffmpeg(input)
-     .noVideo()
-     .audioChannels(1)
-     .audioFrequency(16000)
-     .format('s16le')
-     .on('error', reject)
-     .pipe(output, { end: true })
+    .noVideo()
+    .audioChannels(1)
+    .audioFrequency(16000)
+    .format('s16le')
+    .on('error', reject)
+    .pipe(output, { end: true })
   })
 }

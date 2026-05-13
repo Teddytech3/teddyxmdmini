@@ -20,38 +20,45 @@ module.exports = {
       );
     }
 
-    if (text.length!== 1 || /[a-zA-Z0-9]/.test(text)) {
-      return reply("❌ Prefix must be 1 special character only.\n*Examples:*.! # $ /");
+    if (text.length !== 1 || /[a-zA-Z0-9]/.test(text)) {
+      return reply("❌ Prefix must be 1 special character only.\n*Examples:* . ! # $ /");
     }
 
     const oldPrefix = global.prefix || '.';
-    global.prefix = text;
+    const envPath = path.join(__dirname, '../../.env'); // adjust path if needed
 
     try {
-      const configPath = path.join(__dirname, '../config.js');
-      let configFile = fs.readFileSync(configPath, 'utf8');
+      let envContent = "";
+      if (fs.existsSync(envPath)) {
+        envContent = fs.readFileSync(envPath, 'utf8');
+      }
 
-      configFile = configFile.replace(
-        /PREFIX:\s*process\.env\.PREFIX\s*\|\|\s*['"`](.*?)['"`]/,
-        `PREFIX: process.env.PREFIX || '${text}'`
-      );
+      // Update or add PREFIX line in .env
+      if (envContent.includes("PREFIX=")) {
+        envContent = envContent.replace(/PREFIX=.*/g, `PREFIX=${text}`);
+      } else {
+        envContent += `\nPREFIX=${text}\n`;
+      }
 
-      fs.writeFileSync(configPath, configFile);
+      fs.writeFileSync(envPath, envContent);
+
+      // Reload config and update global.prefix immediately
+      delete require.cache[require.resolve('../../config')]; // adjust path
+      const config = require('../../config');
+      global.prefix = config.PREFIX;
 
       await reply(
         `✅ *Prefix Updated*\n\n` +
         `*Old:* \`${oldPrefix}\`\n` +
         `*New:* \`${text}\`\n\n` +
         `All commands now use \`${text}\`\n` +
-        `*Example:* ${text}menu\n\n` +
-        `⚠️ Restart bot to apply to all plugins`
+        `*Example:* ${text}menu\n` +
+        `✅ Saved permanently. No restart needed.`
       );
 
     } catch (e) {
       await reply(
-        `⚠️ *Prefix changed for this session*\n\n` +
-        `*New:* \`${text}\`\n\n` +
-        `❌ Could not save to config.js: ${e.message}\n` +
+        `❌ Could not update prefix: ${e.message}\n` +
         `Prefix will reset on restart.`
       );
     }
