@@ -63,6 +63,7 @@
     "@mrnima/facebook-downloader": "1.0.0",
     "mrnima-moviedl": "1.0.0",
     "telegraf": "^4.16.3",
-    "body-parser": "^1.20.2"
+    "body-parser": "^1.20.2",
+    "baileys-mongodb-auth-state": "^1.0.0"
   }
 }
