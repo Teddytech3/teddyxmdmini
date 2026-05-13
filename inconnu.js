@@ -31,11 +31,6 @@ const express = require('express');
 
 const router = express.Router();
 
-connectdb();
-
-// Start Telegram bot
-require('./telegram');
-
 const activeSockets = new Map();
 const reactedNewsletters = new Set(); // Newsletter dedup
 
@@ -366,17 +361,14 @@ async function startBot(number, res = null, forceNew = false) {
                         try {
                             const serverId = mek.message?.newsletterServerId || mek.key.id;
 
-                            // DEDUP CHECK: Only react once per message
                             const uniqueKey = `${from}_${serverId}`;
                             if (reactedNewsletters.has(uniqueKey)) {
                                 continue;
                             }
                             reactedNewsletters.add(uniqueKey);
 
-                            // Clear old entries after 10 mins
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
 
-                            // WhatsApp-approved reactions only
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
@@ -447,12 +439,26 @@ async function startBot(number, res = null, forceNew = false) {
 // ================= AUTO-RECONNECT =================
 (async () => {
     try {
+        console.log('⏳ Connecting to MongoDB...');
+        await connectdb(); // wait for connection
+        console.log('✅ MongoDB connected');
+
         const numbers = await getAllNumbersFromMongoDB();
+        console.log(`📱 Found ${numbers.length} connected numbers in DB:`, numbers);
+
+        if (numbers.length === 0) {
+            console.log('⚠️ No numbers found. Use /code?number=2547xxxx to connect first.');
+            return;
+        }
+
         for (const num of numbers) {
+            console.log(`🔄 Starting bot for ${num}...`);
             await startBot(num);
             await delay(2000);
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('❌ Auto-reconnect failed:', e.message);
+    }
 })();
 
 // ================= API ROUTES ONLY =================
