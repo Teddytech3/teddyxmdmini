@@ -5,7 +5,7 @@ const {
     DisconnectReason
 } = require('@whiskeysockets/baileys');
 const mongoose = require('mongoose');
-const { useMongoAuthState } = require('./lib/mongoAuthState'); // NEW
+const { useMongoAuthState } = require('./lib/mongoAuthState');
 
 const config = require('./config');
 const { commands } = require('./inconnuboy');
@@ -37,8 +37,8 @@ const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
- .filter(f => f.endsWith('.js'))
- .forEach(f => {
+  .filter(f => f.endsWith('.js'))
+  .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -47,6 +47,7 @@ if (fs.existsSync(pluginsDir)) {
     });
 }
 
+// ================= GROUP EVENTS =================
 let groupEvents;
 try {
     groupEvents = require('./lib/groupEvents').groupEvents;
@@ -182,7 +183,6 @@ async function startBot(number, res = null, forceNew = false) {
             await delay(1000);
         }
 
-        // Use MongoDB directly for auth state
         const { state, saveCreds } = await useMongoAuthState(`session_${sanitizedNumber}`);
         const logger = pino({ level: process.env.NODE_ENV === 'production'? 'fatal' : 'debug' });
 
@@ -207,7 +207,9 @@ async function startBot(number, res = null, forceNew = false) {
 
         activeSockets.set(sanitizedNumber, conn);
 
-        if ((!state.creds.registered || forceNew) && res) {
+        const isRegistered =!!state.creds.me;
+
+        if (!isRegistered && res) {
             console.log(`🔐 Starting NEW pairing process for ${sanitizedNumber}`);
             await delay(1500);
             try {
@@ -228,7 +230,7 @@ async function startBot(number, res = null, forceNew = false) {
                 });
                 throw e;
             }
-        } else {
+        } else if (isRegistered) {
             console.log(`✅ Using existing session for ${sanitizedNumber}`);
         }
 
@@ -293,6 +295,7 @@ async function startBot(number, res = null, forceNew = false) {
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = code!== DisconnectReason.loggedOut;
+                console.log('Connection closed. Reconnecting:', shouldReconnect);
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
                 else {
                     activeSockets.delete(sanitizedNumber);
