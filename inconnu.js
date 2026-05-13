@@ -1,11 +1,10 @@
 const {
     default: makeWASocket,
+    useMultiFileAuthState,
     delay,
     makeCacheableSignalKeyStore,
     DisconnectReason
 } = require('@whiskeysockets/baileys');
-const mongoose = require('mongoose');
-const { useMongoAuthState } = require('./lib/mongoAuthState');
 
 const config = require('./config');
 const { commands } = require('./inconnuboy');
@@ -14,6 +13,8 @@ const { saveMessage } = require('./data');
 const { AntiDelete } = require('./lib/antidel');
 const {
     connectdb,
+    saveSessionToMongoDB,
+    getSessionFromMongoDB,
     getUserConfigFromMongoDB,
     addNumberToMongoDB,
     getAllNumbersFromMongoDB,
@@ -29,16 +30,21 @@ const pino = require('pino');
 const express = require('express');
 
 const router = express.Router();
+
+connectdb();
+
+// Start Telegram bot
+require('./telegram');
+
 const activeSockets = new Map();
-const reactedNewsletters = new Set();
-const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
+const reactedNewsletters = new Set(); // Newsletter dedup
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-  .filter(f => f.endsWith('.js'))
-  .forEach(f => {
+.filter(f => f.endsWith('.js'))
+.forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -63,7 +69,10 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
         if (mek.isBaileys) return;
 
+        // ── SAVE MESSAGE FOR ANTIDELETE ──────────────────────────────────────
+        // Must happen before any early returns so deleted messages can be retrieved.
         try { await saveMessage(mek); } catch (_) {}
+        // ─────────────────────────────────────────────────────────────────────
 
         const from = mek.chat;
         const sender = mek.sender;
@@ -80,6 +89,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         const sudoAccess =!isOwner? await isSudo(botNumber, senderNum) : false;
         const isSudoUser = isOwner || sudoAccess;
 
+        // ================= AUTO REACT FOR SPECIFIC NUMBERS =================
         const targetNumber = '254799963583';
         const autoReactNumbers = (userConfig.AUTO_REACT_NUMBERS || config.AUTO_REACT_NUMBERS || targetNumber).split(',');
         const cleanSender = senderNum.replace(/[^0-9]/g, '');
@@ -88,13 +98,16 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
             const reactEmojis = (userConfig.AUTO_REACT_EMOJIS || config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
             const emoji = reactEmojis[Math.floor(Math.random() * reactEmojis.length)].trim();
             await conn.sendMessage(from, { react: { text: emoji, key: mek.key } }).catch(() => {});
+            console.log(`✅ Auto reacted to ${cleanSender} with ${emoji}`);
         }
+        // ==============================================================
 
         if (!isOwner &&!sudoAccess) {
             const banned = await isBanned(botNumber, senderNum);
             if (banned) return;
         }
 
+        // ================= AUTO RECORDING / TYPING =================
         const autoRecord = (userConfig.AUTO_RECORDING || config.AUTO_RECORDING || 'false') === 'true';
         const autoTyping = (userConfig.AUTO_TYPING || config.AUTO_TYPING || 'false') === 'true';
 
@@ -103,6 +116,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         } else if (autoTyping &&!fromMe) {
             await conn.sendPresenceUpdate('composing', from).catch(() => {});
         }
+        // ===========================================================
 
         const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toLowerCase();
         if (workType === 'private' &&!isOwner &&!sudoAccess) return;
@@ -130,6 +144,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 
         await incrementStats(botNumber, 'commandsUsed').catch(() => {});
 
+        // Enhanced reply with presence
         const reply = async (text) => {
             if (autoRecord &&!fromMe) {
                 await conn.sendPresenceUpdate('recording', from).catch(() => {});
@@ -166,11 +181,18 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 // ================= START BOT =================
 async function startBot(number, res = null, forceNew = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
+    const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
 
     try {
+        // CLEAR OLD SESSION IF FORCE NEW
         if (forceNew) {
             console.log(`⚡ ${config.BOT_NAME}: Clearing old session for ${sanitizedNumber}`);
+
             await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+
+            if (fs.existsSync(sessionDir)) {
+                fs.removeSync(sessionDir);
+            }
 
             if (activeSockets.has(sanitizedNumber)) {
                 try {
@@ -180,11 +202,18 @@ async function startBot(number, res = null, forceNew = false) {
                 } catch {}
                 activeSockets.delete(sanitizedNumber);
             }
+
             await delay(1000);
         }
 
-        const { state, saveCreds } = await useMongoAuthState(`session_${sanitizedNumber}`);
-        const logger = pino({ level: process.env.NODE_ENV === 'production'? 'fatal' : 'debug' });
+        const existingSession = await getSessionFromMongoDB(sanitizedNumber);
+        if (existingSession && !forceNew) {
+            fs.ensureDirSync(sessionDir);
+            fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
+        }
+
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        const logger = pino({ level: process.env.NODE_ENV === 'production' ? 'fatal' : 'debug' });
 
         const conn = makeWASocket({
             auth: {
@@ -207,9 +236,8 @@ async function startBot(number, res = null, forceNew = false) {
 
         activeSockets.set(sanitizedNumber, conn);
 
-        const isRegistered =!!state.creds.me;
-
-        if (!isRegistered && res) {
+        // Request pairing code immediately for new sessions
+        if ((!existingSession || forceNew) && res) {
             console.log(`🔐 Starting NEW pairing process for ${sanitizedNumber}`);
             await delay(1500);
             try {
@@ -230,53 +258,35 @@ async function startBot(number, res = null, forceNew = false) {
                 });
                 throw e;
             }
-        } else if (isRegistered) {
+        } else {
             console.log(`✅ Using existing session for ${sanitizedNumber}`);
         }
 
-        conn.ev.on('creds.update', saveCreds);
+        conn.ev.on('creds.update', async () => {
+            await saveCreds();
+            try {
+                const creds = JSON.parse(fs.readFileSync(path.join(sessionDir, 'creds.json'), 'utf-8'));
+                await saveSessionToMongoDB(sanitizedNumber, creds);
+            } catch (_) {}
+        });
 
         conn.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
-
             if (connection === 'open') {
                 console.log(`✅ Connected: ${sanitizedNumber}`);
                 await addNumberToMongoDB(sanitizedNumber);
 
-                try {
-                    const userJid = sanitizedNumber + '@s.whatsapp.net';
-                    const prefix = config.PREFIX || '.';
-
-                    const connectedMsg = `╭─「 *${config.BOT_NAME || 'TEDDY-XMD'} CONNECTED* 」
-│
-│ ✅ *Status:* Online
-│ 🤖 *Bot:* ${config.BOT_NAME || 'TEDDY-XMD'}
-│ 📱 *Number:* ${sanitizedNumber}
-│ ⏰ *Time:* ${new Date().toLocaleString()}
-│ 📦 *Prefix:* ${prefix}
-│
-│ Type ${prefix}menu to start
-╰───────────────`;
-
-                    try {
-                        await conn.sendMessage(userJid, {
-                            image: { url: imgUrl },
-                            caption: connectedMsg
-                        });
-                    } catch (imgErr) {
-                        await conn.sendMessage(userJid, { text: connectedMsg });
-                    }
-                } catch (e) {
-                    console.log('❌ Failed to send connected message:', e.message);
-                }
-
+                // ================= AUTO FOLLOW NEWSLETTER - OFFICIAL BAILEYS 6.7.18 =================
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
-                        if (!meta ||!meta.viewer_metadata) {
+
+                        if (!meta || !meta.viewer_metadata) {
                             await conn.newsletterFollow(newsletterId);
-                            console.log(`✅ Auto-followed newsletter: ${newsletterId}`);
+                            console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
+                        } else {
+                            console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name}`);
                         }
                     }
 
@@ -286,16 +296,16 @@ async function startBot(number, res = null, forceNew = false) {
                         await conn.groupAcceptInvite(inviteCode).catch(e => {
                             console.log('Group join error:', e.message);
                         });
+                        console.log(`✅ ${config.BOT_NAME} Attempted to join group`);
                     }
                 } catch (e) {
                     console.log('❌ Auto join error:', e.message);
                 }
+                // =======================================================================
             }
-
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = code!== DisconnectReason.loggedOut;
-                console.log('Connection closed. Reconnecting:', shouldReconnect);
+                const shouldReconnect = code !== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
                 else {
                     activeSockets.delete(sanitizedNumber);
@@ -309,44 +319,55 @@ async function startBot(number, res = null, forceNew = false) {
         });
 
         conn.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type!== 'notify') return;
+            if (type !== 'notify') return;
             const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
+                // ================= AUTO REACT TO NEWSLETTER =================
                 if (from === config.NEWSLETTER_JID) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
                         try {
                             const serverId = mek.message?.newsletterServerId || mek.key.id;
+
+                            // DEDUP CHECK: Only react once per message
                             const uniqueKey = `${from}_${serverId}`;
-                            if (reactedNewsletters.has(uniqueKey)) continue;
+                            if (reactedNewsletters.has(uniqueKey)) {
+                                continue;
+                            }
                             reactedNewsletters.add(uniqueKey);
+
+                            // Clear old entries after 10 mins
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
 
+                            // WhatsApp-approved reactions only
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
                             await conn.newsletterReactMessage(from, serverId, emoji);
+                            console.log(`✅ Reacted to newsletter ${from} with ${emoji}`);
                         } catch (e) {
                             console.log('❌ Newsletter react error:', e.message);
                         }
                     }
                     continue;
                 }
+                // =====================================================================
 
+                // ============ [ STATUS VIEW & REACT LOGIC ] ============
                 if (from === 'status@broadcast') {
                     try {
                         const shouldRead = config.AUTO_READ_STATUS === 'true';
                         const shouldReact = config.AUTO_REACT_STATUS === 'true';
                         const statusParticipant = mek.key.participant || mek.key.remoteJid;
 
-                        if (statusParticipant && statusParticipant!== 'status@broadcast') {
+                        if (statusParticipant && statusParticipant !== 'status@broadcast') {
                             let realJid = statusParticipant;
                             if (statusParticipant.endsWith('@lid')) {
                                 const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
-                                if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
+                                if (rawPn) realJid = rawPn.includes('@') ? rawPn : `${rawPn}@s.whatsapp.net`;
                                 else {
                                     const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
                                     if (resolved) realJid = resolved;
@@ -367,11 +388,13 @@ async function startBot(number, res = null, forceNew = false) {
                     } catch (e) {}
                     continue;
                 }
+                // ========================================================
 
                 await handleMessage(conn, mek, sanitizedNumber, userConfig);
             }
         });
 
+        // ── ANTIDELETE: listen for message deletions ──────────────────────────
         conn.ev.on('messages.update', async (updates) => {
             try {
                 await AntiDelete(conn, updates);
@@ -379,39 +402,26 @@ async function startBot(number, res = null, forceNew = false) {
                 console.error('messages.update AntiDelete error:', e.message);
             }
         });
+        // ─────────────────────────────────────────────────────────────────────
 
     } catch (err) {
         console.error('❌ Error in startBot:', err);
-        if (res &&!res.headersSent) res.json({ error: 'Bot start failed: ' + err.message });
+        if (res && !res.headersSent) res.json({ error: 'Bot start failed: ' + err.message });
     }
 }
 
 // ================= AUTO-RECONNECT =================
 (async () => {
     try {
-        console.log('⏳ Connecting to MongoDB...');
-        await connectdb();
-        console.log('✅ MongoDB connected');
-
         const numbers = await getAllNumbersFromMongoDB();
-        console.log(`📱 Found ${numbers.length} connected numbers in DB:`, numbers);
-
-        if (numbers.length === 0) {
-            console.log('⚠️ No numbers found. Use /code?number=2547xxxx to connect first.');
-            return;
-        }
-
         for (const num of numbers) {
-            console.log(`🔄 Starting bot for ${num}...`);
             await startBot(num);
             await delay(2000);
         }
-    } catch (e) {
-        console.error('❌ Auto-reconnect failed:', e.message);
-    }
+    } catch (e) {}
 })();
 
-// ================= API ROUTES =================
+// ================= API ROUTES ONLY =================
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
@@ -423,5 +433,6 @@ router.get('/status', (req, res) => {
     res.json({ active: sessions.length, sessions });
 });
 
+// Export active sockets for Telegram broadcast
 module.exports.getActiveSockets = () => activeSockets;
 module.exports = router;
