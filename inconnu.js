@@ -39,12 +39,14 @@ require('./telegram');
 const activeSockets = new Map();
 const reactedNewsletters = new Set(); // Newsletter dedup
 
+const imgUrl = 'https://files.catbox.moe/13nyhx.jpg'; // Connected image
+
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-.filter(f => f.endsWith('.js'))
-.forEach(f => {
+   .filter(f => f.endsWith('.js'))
+   .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -70,9 +72,8 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         if (mek.isBaileys) return;
 
         // ── SAVE MESSAGE FOR ANTIDELETE ──────────────────────────────────────
-        // Must happen before any early returns so deleted messages can be retrieved.
         try { await saveMessage(mek); } catch (_) {}
-        // ─────────────────────────────────────────────────────────────────────
+        // ─────────────────────────────────────
 
         const from = mek.chat;
         const sender = mek.sender;
@@ -207,13 +208,13 @@ async function startBot(number, res = null, forceNew = false) {
         }
 
         const existingSession = await getSessionFromMongoDB(sanitizedNumber);
-        if (existingSession && !forceNew) {
+        if (existingSession &&!forceNew) {
             fs.ensureDirSync(sessionDir);
             fs.writeFileSync(path.join(sessionDir, 'creds.json'), JSON.stringify(existingSession));
         }
 
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-        const logger = pino({ level: process.env.NODE_ENV === 'production' ? 'fatal' : 'debug' });
+        const logger = pino({ level: process.env.NODE_ENV === 'production'? 'fatal' : 'debug' });
 
         const conn = makeWASocket({
             auth: {
@@ -272,17 +273,49 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
+
             if (connection === 'open') {
                 console.log(`✅ Connected: ${sanitizedNumber}`);
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // ================= AUTO FOLLOW NEWSLETTER - OFFICIAL BAILEYS 6.7.18 =================
+                // ================= CONNECTED MESSAGE TO USER INBOX =================
+                try {
+                    const userJid = sanitizedNumber + '@s.whatsapp.net';
+                    const prefix = config.PREFIX || '.';
+
+                    const connectedMsg = `╭─「 *${config.BOT_NAME || 'TEDDY-XMD'} CONNECTED* 」
+│
+│ ✅ *Status:* Online
+│ 🤖 *Bot:* ${config.BOT_NAME || 'TEDDY-XMD'}
+│ 📱 *Number:* ${sanitizedNumber}
+│ ⏰ *Time:* ${new Date().toLocaleString()}
+│ 📦 *Prefix:* ${prefix}
+│
+│ Type ${prefix}menu to start
+╰───────────────`;
+
+                    try {
+                        await conn.sendMessage(userJid, {
+                            image: { url: imgUrl },
+                            caption: connectedMsg
+                        });
+                    } catch (imgErr) {
+                        console.log("Connected image failed, sending text only:", imgErr.message);
+                        await conn.sendMessage(userJid, { text: connectedMsg });
+                    }
+                    console.log('✅ Connected message sent to user inbox');
+                } catch (e) {
+                    console.log('❌ Failed to send connected message:', e.message);
+                }
+                // ==============================================================
+
+                // ================= AUTO FOLLOW NEWSLETTER =================
                 try {
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
 
-                        if (!meta || !meta.viewer_metadata) {
+                        if (!meta ||!meta.viewer_metadata) {
                             await conn.newsletterFollow(newsletterId);
                             console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
                         } else {
@@ -303,9 +336,10 @@ async function startBot(number, res = null, forceNew = false) {
                 }
                 // =======================================================================
             }
+
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = code !== DisconnectReason.loggedOut;
+                const shouldReconnect = code!== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
                 else {
                     activeSockets.delete(sanitizedNumber);
@@ -319,7 +353,7 @@ async function startBot(number, res = null, forceNew = false) {
         });
 
         conn.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type !== 'notify') return;
+            if (type!== 'notify') return;
             const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
             for (const mek of messages) {
@@ -363,11 +397,11 @@ async function startBot(number, res = null, forceNew = false) {
                         const shouldReact = config.AUTO_REACT_STATUS === 'true';
                         const statusParticipant = mek.key.participant || mek.key.remoteJid;
 
-                        if (statusParticipant && statusParticipant !== 'status@broadcast') {
+                        if (statusParticipant && statusParticipant!== 'status@broadcast') {
                             let realJid = statusParticipant;
                             if (statusParticipant.endsWith('@lid')) {
                                 const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
-                                if (rawPn) realJid = rawPn.includes('@') ? rawPn : `${rawPn}@s.whatsapp.net`;
+                                if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
                                 else {
                                     const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
                                     if (resolved) realJid = resolved;
@@ -402,11 +436,11 @@ async function startBot(number, res = null, forceNew = false) {
                 console.error('messages.update AntiDelete error:', e.message);
             }
         });
-        // ─────────────────────────────────────────────────────────────────────
+        // ─────────────────────────────────────
 
     } catch (err) {
         console.error('❌ Error in startBot:', err);
-        if (res && !res.headersSent) res.json({ error: 'Bot start failed: ' + err.message });
+        if (res &&!res.headersSent) res.json({ error: 'Bot start failed: ' + err.message });
     }
 }
 
