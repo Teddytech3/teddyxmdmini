@@ -1,6 +1,5 @@
 const { cmd } = require('../inconnuboy');
 const config = require('../config');
-const os = require('os');
 const process = require('process');
 
 cmd({
@@ -10,12 +9,15 @@ cmd({
   category: "menu",
   desc: "Show full bot command list",
   filename: __filename
-}, async (conn, mek, m, { from, reply }) => {
+}, async (conn, mek, m, { from, sender, reply }) => {
   try {
-    const sender = m.sender || 'unknown@s.whatsapp.net';
     const prefix = config.PREFIX || ".";
     const mode = config.WORK_TYPE?.toUpperCase() || "PUBLIC";
-    const pushname = m.pushName || 'User';
+
+    // Loading message
+    let loading = await conn.sendMessage(from, {
+      text: '*TEDDY XMD Loading...* ⚡'
+    }, { quoted: mek });
 
     // Uptime
     const uptime = () => {
@@ -31,6 +33,8 @@ cmd({
     await conn.sendPresenceUpdate('composing', from);
     const ping = Date.now() - start;
 
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
     const menu = `
 ╭━━〔 *⚡ TEDDY-XMD* 〕━━╮
 ┃ 👤 User : @${sender.split("@")[0]}
@@ -44,12 +48,11 @@ cmd({
   ${prefix}setprefix | ${prefix}mode | ${prefix}autorecording
   ${prefix}autotyping | ${prefix}autoread | ${prefix}autostatusview
   ${prefix}anticall | ${prefix}antidelete | ${prefix}broadcast
-  ${prefix}chatbot | ${prefix}restart | ${prefix}update
 
 *👥 GROUP*
   ${prefix}tagall | ${prefix}kick | ${prefix}add | ${prefix}promote
   ${prefix}demote | ${prefix}mute | ${prefix}unmute | ${prefix}delete
-  ${prefix}antilink | ${prefix}antitag | ${prefix}lockgc | ${prefix}unlockgc
+  ${prefix}antilink | ${prefix}antitag | ${prefix}lockgc
 
 *⬇️ DOWNLOAD*
   ${prefix}play | ${prefix}video | ${prefix}tiktok | ${prefix}fb
@@ -86,20 +89,30 @@ cmd({
 _⚡ Powered by TEDDY-XMD_
 `;
 
-    await conn.sendMessage(from, {
-      image: { url: config.IMAGE_PATH || 'https://files.catbox.moe/13nyhx.jpg' },
-      caption: menu,
-      contextInfo: {
-        mentionedJid: [sender],
-        forwardingScore: 999,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-          newsletterJid: '120363421104812135@newsletter',
-          newsletterName: 'TEDDY XMD OFFICIAL',
-          serverMessageId: -1
+    const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
+
+    try {
+      await conn.sendMessage(from, {
+        image: { url: imgUrl },
+        caption: menu,
+        mentions: [sender],
+        contextInfo: {
+          forwardingScore: 999,
+          isForwarded: true,
+          forwardedNewsletterMessageInfo: {
+            newsletterJid: config.NEWSLETTER_JID || '120363421104812135@newsletter',
+            newsletterName: config.OWNER_NAME || 'TEDDY XMD OFFICIAL',
+            serverMessageId: -1
+          }
         }
-      }
-    }, { quoted: m });
+      }, { quoted: loading });
+    } catch (imgErr) {
+      console.log("Menu image failed, sending text only:", imgErr.message);
+      await conn.sendMessage(from, {
+        text: menu,
+        mentions: [sender]
+      }, { quoted: loading });
+    }
 
   } catch (err) {
     console.log("MENU ERROR:", err);

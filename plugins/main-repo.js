@@ -12,6 +12,11 @@ cmd({
 },
 async (conn, mek, m, { from, reply, sender }) => {
     try {
+        // Loading message
+        let loading = await conn.sendMessage(from, {
+            text: '*Fetching repo details...* 👑'
+        }, { quoted: mek });
+
         const repoUrl = "https://github.com/Teddytech1/TEDDY-XMD";
         const apiUrl = "https://api.github.com/repos/Teddytech1/TEDDY-XMD";
 
@@ -62,12 +67,23 @@ async (conn, mek, m, { from, reply, sender }) => {
             }
         };
 
-        await conn.sendMessage(from, {
-            image: { url: `https://files.catbox.moe/13nyhx.jpg` },
-            caption: repoMsg,
-            contextInfo: newsletterContextInfo,
-            mentions: [sender] // This makes it tag the user
-        }, { quoted: fakevCard });
+        const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
+
+        try {
+            await conn.sendMessage(from, {
+                image: { url: imgUrl },
+                caption: repoMsg,
+                contextInfo: newsletterContextInfo,
+                mentions: [sender]
+            }, { quoted: fakevCard });
+        } catch (imgErr) {
+            console.log("Repo image failed, sending text only:", imgErr.message);
+            await conn.sendMessage(from, {
+                text: repoMsg,
+                contextInfo: newsletterContextInfo,
+                mentions: [sender]
+            }, { quoted: fakevCard });
+        }
 
     } catch (e) {
         console.error(e);
