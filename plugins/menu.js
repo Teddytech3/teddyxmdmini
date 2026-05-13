@@ -1,121 +1,145 @@
-const { cmd } = require('../inconnuboy');
-const config = require('../config');
-const process = require('process');
+const menu = async (conn, mek, m, { from, prefix, pushname }) => {
+    const uptime = process.uptime();
+    const hours = Math.floor(uptime / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    const seconds = Math.floor(uptime % 60);
+    const uptimeStr = `${hours}h ${minutes}m ${seconds}s`;
 
-cmd({
-  pattern: "menu",
-  alias: ["help", "m", "list", "commands"],
-  react: "⚡",
-  category: "menu",
-  desc: "Show full bot command list",
-  filename: __filename
-}, async (conn, mek, m, { from, sender, reply }) => {
-  try {
-    const prefix = config.PREFIX || ".";
-    const mode = config.WORK_TYPE?.toUpperCase() || "PUBLIC";
-
-    // Loading message
-    let loading = await conn.sendMessage(from, {
-      text: '*TEDDY XMD Loading...* ⚡'
+    const start = Date.now();
+    
+    // Send loading message
+    let loadingMsg = await conn.sendMessage(from, { 
+        text: `╭━━━〔 *${config.BOT_NAME || 'TEDDY-XMD'}* 〕━━━╮
+┃ ⏳ Loading menu...
+╰━━━━━━━━━━━━╯` 
     }, { quoted: mek });
 
-    // Uptime
-    const uptime = () => {
-      let sec = process.uptime();
-      let h = Math.floor(sec / 3600);
-      let mns = Math.floor((sec % 3600) / 60);
-      let s = Math.floor(sec % 60);
-      return `${h}h ${mns}m ${s}s`;
-    };
+    // Calculate speed after loading msg is sent
+    const speed = Date.now() - start;
 
-    // Ping
-    const start = Date.now();
-    await conn.sendPresenceUpdate('composing', from);
-    const ping = Date.now() - start;
+    const menuMsg = `┏━━❐✧ ${config.BOT_NAME || 'TEDDY-XMD'} ✧❐
+┃✦ User: @${m.sender.split('@')[0]}
+┃✦ Prefix: [${prefix}]
+┃✦ Mode: ${config.WORK_TYPE || 'PUBLIC'}
+┃✦ Uptime: ${uptimeStr}
+┃✦ Speed: ${speed}ms
+┗❐
 
-    await new Promise(resolve => setTimeout(resolve, 1200));
+┏━━❐ \`OWNER\` ❐
+┃ ✧ setprefix
+┃ ✧ mode
+┃ ✧ autorecording
+┃ ✧ autotyping
+┃ ✧ autoread
+┃ ✧ autostatusview
+┃ ✧ anticall
+┃ ✧ antidelete
+┃ ✧ broadcast
+┗❐
 
-    const menu = `
-╭━━〔 *⚡ TEDDY-XMD* 〕━━╮
-┃ 👤 User : @${sender.split("@")[0]}
-┃ ⚙️ Prefix : ${prefix}
-┃ 🌐 Mode : ${mode}
-┃ ⏱️ Uptime : ${uptime()}
-┃ 📡 Speed : ${ping}ms
-╰━━━━━━━━━━━━╯
+┏━━❐ \`GROUP\` ❐
+┃ ✧ tagall
+┃ ✧ kick
+┃ ✧ add
+┃ ✧ promote
+┃ ✧ demote
+┃ ✧ mute
+┃ ✧ unmute
+┃ ✧ delete
+┃ ✧ antilink
+┃ ✧ antitag
+┃ ✧ lockgc
+┗❐
 
-*👑 OWNER*
-  ${prefix}setprefix | ${prefix}mode | ${prefix}autorecording
-  ${prefix}autotyping | ${prefix}autoread | ${prefix}autostatusview
-  ${prefix}anticall | ${prefix}antidelete | ${prefix}broadcast
+┏━━❐ \`DOWNLOAD\` ❐
+┃ ✧ play
+┃ ✧ video
+┃ ✧ tiktok
+┃ ✧ fb
+┃ ✧ ig
+┃ ✧ app
+┃ ✧ movie
+┃ ✧ gitclone
+┗❐
 
-*👥 GROUP*
-  ${prefix}tagall | ${prefix}kick | ${prefix}add | ${prefix}promote
-  ${prefix}demote | ${prefix}mute | ${prefix}unmute | ${prefix}delete
-  ${prefix}antilink | ${prefix}antitag | ${prefix}lockgc
+┏━━❐ \`AI\` ❐
+┃ ✧ gpt
+┃ ✧ imagine
+┃ ✧ gemini
+┃ ✧ ai
+┃ ✧ deepseek
+┃ ✧ metaai
+┗❐
 
-*⬇️ DOWNLOAD*
-  ${prefix}play | ${prefix}video | ${prefix}tiktok | ${prefix}fb
-  ${prefix}ig | ${prefix}app | ${prefix}movie | ${prefix}gitclone
+┏━━❐ \`TOOLS\` ❐
+┃ ✧ ping
+┃ ✧ trt
+┃ ✧ attp
+┃ ✧ ss
+┃ ✧ tts
+┃ ✧ img
+┃ ✧ tomp3
+┃ ✧ tourl
+┃ ✧ weather
+┃ ✧ vv
+┃ ✧ caption
+┗❐
 
-*🤖 AI*
-  ${prefix}gpt | ${prefix}imagine | ${prefix}gemini | ${prefix}ai
-  ${prefix}deepseek | ${prefix}metaai
+┏━━❐ \`FUN\` ❐
+┃ ✧ hug
+┃ ✧ kiss
+┃ ✧ slap
+┃ ✧ poke
+┃ ✧ insult
+┃ ✧ hack
+┃ ✧ dance
+┃ ✧ cry
+┗❐
 
-*✨ TOOLS*
-  ${prefix}ping | ${prefix}trt | ${prefix}attp | ${prefix}ss
-  ${prefix}tts | ${prefix}img | ${prefix}tomp3 | ${prefix}tourl
-  ${prefix}weather | ${prefix}vv | ${prefix}caption
+┏━━❐ \`LOGO\` ❐
+┃ ✧ neon
+┃ ✧ glitch
+┃ ✧ galaxy
+┃ ✧ marvel
+┃ ✧ naruto
+┃ ✧ blackpink
+┃ ✧ dragonball
+┗❐
 
-*🎮 FUN*
-  ${prefix}hug | ${prefix}kiss | ${prefix}slap | ${prefix}poke
-  ${prefix}insult | ${prefix}hack | ${prefix}dance | ${prefix}cry
+┏━━❐ \`SETTINGS\` ❐
+┃ ✧ always-online
+┃ ✧ autoreact
+┃ ✧ dashboard
+┃ ✧ readreceipt
+┃ ✧ setprefix1
+┗❐
 
-*🖼️ LOGO*
-  ${prefix}neon | ${prefix}glitch | ${prefix}galaxy | ${prefix}marvel
-  ${prefix}naruto | ${prefix}blackpink | ${prefix}dragonball
+┏━━❐ \`SEARCH\` ❐
+┃ ✧ define
+┃ ✧ yts
+┃ ✧ shazam
+┃ ✧ ytstalk
+┗❐
 
-*⚙️ SETTINGS*
-  ${prefix}always-online | ${prefix}autoreact | ${prefix}dashboard
-  ${prefix}readreceipt | ${prefix}setprefix1
+┏━━❐ \`MAIN\` ❐
+┃ ✧ alive
+┃ ✧ menu
+┃ ✧ owner
+┃ ✧ repo
+┃ ✧ speed
+┃ ✧ uptime
+┗❐
 
-*🔍 SEARCH*
-  ${prefix}define | ${prefix}yts | ${prefix}shazam | ${prefix}ytstalk
+_⚡ Powered by ${config.BOT_NAME || 'TEDDY-XMD'}_`;
 
-*📱 MAIN*
-  ${prefix}alive | ${prefix}menu | ${prefix}owner | ${prefix}repo
-  ${prefix}speed | ${prefix}uptime
+    // Edit the loading message into the actual menu
+    await conn.sendMessage(from, {
+        edit: loadingMsg.key,
+        image: { url: 'https://files.catbox.moe/13nyhx.jpg' },
+        caption: menuMsg,
+        mentions: [m.sender]
+    });
 
-_⚡ Powered by TEDDY-XMD_
-`;
+};
 
-    const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
-
-    try {
-      await conn.sendMessage(from, {
-        image: { url: imgUrl },
-        caption: menu,
-        mentions: [sender],
-        contextInfo: {
-          forwardingScore: 999,
-          isForwarded: true,
-          forwardedNewsletterMessageInfo: {
-            newsletterJid: config.NEWSLETTER_JID || '120363421104812135@newsletter',
-            newsletterName: config.OWNER_NAME || 'TEDDY XMD OFFICIAL',
-            serverMessageId: -1
-          }
-        }
-      }, { quoted: loading });
-    } catch (imgErr) {
-      console.log("Menu image failed, sending text only:", imgErr.message);
-      await conn.sendMessage(from, {
-        text: menu,
-        mentions: [sender]
-      }, { quoted: loading });
-    }
-
-  } catch (err) {
-    console.log("MENU ERROR:", err);
-    reply("*❌ Failed to load menu*");
-  }
-});
+export default menu;
