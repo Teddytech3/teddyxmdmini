@@ -5,7 +5,7 @@ const {
     DisconnectReason
 } = require('@whiskeysockets/baileys');
 const mongoose = require('mongoose');
-const { MongoAuthState } = require('baileys-mongodb-auth-state'); // NEW
+const { useMongoAuthState } = require('./lib/mongoAuthState'); // NEW
 
 const config = require('./config');
 const { commands } = require('./inconnuboy');
@@ -37,8 +37,8 @@ const imgUrl = 'https://files.catbox.moe/13nyhx.jpg';
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-  .filter(f => f.endsWith('.js'))
-  .forEach(f => {
+ .filter(f => f.endsWith('.js'))
+ .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -183,7 +183,7 @@ async function startBot(number, res = null, forceNew = false) {
         }
 
         // Use MongoDB directly for auth state
-        const { state, saveCreds } = await MongoAuthState(`session_${sanitizedNumber}`);
+        const { state, saveCreds } = await useMongoAuthState(`session_${sanitizedNumber}`);
         const logger = pino({ level: process.env.NODE_ENV === 'production'? 'fatal' : 'debug' });
 
         const conn = makeWASocket({
