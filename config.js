@@ -87,3 +87,4 @@ module.exports = {
     TELEGRAM_BOT_USERNAME: process.env.TELEGRAM_BOT_USERNAME || 'xdbot1',
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '6636269371'
 };
+    
