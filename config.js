@@ -10,7 +10,7 @@ module.exports = {
     // 1. BASE CONFIGURATION
     // ===========================================================
     SESSION_ID: process.env.SESSION_ID || "TEDDY-XMD",
-    MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://sana:jawadsaan@cluster0.39ezrfs.mongodb.net/?appName=Cluster0',
+    MONGODB_URI: process.env.MONGODB_URI || 'mongodb+srv://karmahell33_db_user:FdVaBDQOZj3qpCsn@cluster0.sjpgsqj.mongodb.net/?appName=Cluster0',
 
     // ===========================================================
     // 2. BOT INFORMATION
