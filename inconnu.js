@@ -74,7 +74,6 @@ try {
 // ================= MESSAGE HANDLER =================
 async function handleMessage(conn, mek, botNumber, userConfig) {
     try {
-        // Wait until bot is fully ready
         if (!conn.user ||!conn.user.id) return;
 
         mek = sms(conn, mek);
@@ -235,13 +234,14 @@ async function startBot(number, res = null, forceNew = false) {
 
         activeSockets.set(sanitizedNumber, conn);
 
-        if ((!existingSession || forceNew) && res) {
-            console.log(`🔐 Starting NEW pairing process for ${sanitizedNumber}`);
-            await delay(1500);
+        // Request pairing code BEFORE connecting events
+        if ((!existingSession || forceNew) && res &&!res.headersSent) {
+            console.log(`🔐 Requesting pairing code for ${sanitizedNumber}`);
             try {
+                await delay(1500);
                 const code = await conn.requestPairingCode(sanitizedNumber);
                 console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
-                if (!res.headersSent) res.json({
+                res.json({
                     code,
                     status: 'new_pairing',
                     message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
@@ -254,7 +254,7 @@ async function startBot(number, res = null, forceNew = false) {
                     status: 'error',
                     message: e.message
                 });
-                throw e;
+                return;
             }
         } else {
             console.log(`✅ Using existing session for ${sanitizedNumber}`);
@@ -275,13 +275,9 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // ================= STYLED CONNECTED MESSAGE =================
                 try {
-                    await delay(3000);
-                    if (!conn.user?.id) {
-                        console.log(chalk.red('❌ conn.user not ready yet'));
-                        return;
-                    }
+                    await delay(4000);
+                    if (!conn.user?.id) return;
 
                     const connectedJid = conn.user.id;
                     const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
@@ -297,7 +293,6 @@ async function startBot(number, res = null, forceNew = false) {
 │ ✅ Status : Connected
 │ 📱 Number : ${sanitizedNumber}
 │ ⏰ Time : ${time}
-│ 🔖 Version: ${config.VERSION || '1.0.0'}
 │ ⚡ Mode : ${workType}
 ╰────────────────────────
 
@@ -318,9 +313,7 @@ async function startBot(number, res = null, forceNew = false) {
                 } catch (e) {
                     console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                 }
-                // ============================================================
 
-                // ================= AUTO FOLLOW NEWSLETTER =================
                 try {
                     const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
                     const backupJid = await resolveNewsletterJid(config.NEWSLETTER_JID_BACKUP);
@@ -353,7 +346,6 @@ async function startBot(number, res = null, forceNew = false) {
                 } catch (e) {
                     console.log('❌ Auto join error:', e.message);
                 }
-                // =======================================================================
             }
 
             if (connection === 'close') {
@@ -373,7 +365,7 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type!== 'notify') return;
-            if (!conn.user ||!conn.user.id) return; // Ignore messages until socket is ready
+            if (!conn.user ||!conn.user.id) return;
 
             const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
@@ -384,7 +376,6 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // ================= NEWSLETTER REACT WITH FALLBACK =================
                 if (targetJids.includes(from)) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
@@ -399,20 +390,15 @@ async function startBot(number, res = null, forceNew = false) {
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
                             const res = await conn.newsletterReactMessage(from, serverId, emoji);
-
                             if (res) {
-                                console.log(chalk.green(`✅ Reacted to newsletter ${from} with ${emoji} | serverId: ${serverId}`));
-                            } else {
-                                console.log(chalk.yellow(`⚠️ Newsletter react returned empty response for ${serverId}`));
+                                console.log(chalk.green(`✅ Reacted to newsletter ${from} with ${emoji}`));
                             }
-
                         } catch (e) {
                             console.log(chalk.red(`❌ Newsletter react failed for ${from}:`), e.message);
                         }
                     }
                     continue;
                 }
-                // ===================================================================
 
                 if (from === 'status@broadcast') {
                     try {
