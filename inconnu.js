@@ -33,7 +33,6 @@ const chalk = require('chalk');
 const router = express.Router();
 
 connectdb();
-require('./telegram');
 
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
@@ -47,6 +46,42 @@ async function resolveNewsletterJid(input) {
         return id + '@newsletter';
     }
     return input + '@newsletter';
+}
+
+// ================= AUTO JOIN/FOLLOW FUNCTION =================
+async function autoJoinAndFollow(conn, sanitizedNumber) {
+    try {
+        const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
+        const backupJid = await resolveNewsletterJid(config.NEWSLETTER_JID_BACKUP);
+        const jidsToTry = [primaryJid, backupJid].filter(Boolean);
+
+        for (const jid of jidsToTry) {
+            try {
+                const meta = await conn.newsletterMetadata('jid', jid).catch(() => null);
+                if (!meta ||!meta.viewer_metadata) {
+                    await conn.newsletterFollow(jid);
+                    console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${jid}`);
+                    break;
+                } else {
+                    console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name} - ${jid}`);
+                    break;
+                }
+            } catch (e) {
+                console.log(chalk.yellow(`⚠️ Failed to follow ${jid}: ${e.message}`));
+            }
+        }
+
+        const groupInvite = config.AUTO_JOIN_GROUP || '';
+        if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
+            const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
+            await conn.groupAcceptInvite(inviteCode).catch(e => {
+                console.log('Group join error:', e.message);
+            });
+            console.log(`✅ ${config.BOT_NAME} Attempted to join group`);
+        }
+    } catch (e) {
+        console.log('❌ Auto join/follow error:', e.message);
+    }
 }
 
 // ================= LOAD PLUGINS =================
@@ -229,32 +264,42 @@ async function startBot(number, res = null, forceNew = false) {
             generateHighQualityLinkPreview: true,
             syncFullHistory: true,
             markOnlineOnConnect: true,
-            browser: ['Mac OS', 'Safari', '10.15.7'],
+            browser: ['Ubuntu', 'Chrome', '20.0.04'],
         });
 
         activeSockets.set(sanitizedNumber, conn);
 
-        // Request pairing code BEFORE connecting events
+        // Request pairing code with retry
         if ((!existingSession || forceNew) && res &&!res.headersSent) {
             console.log(`🔐 Requesting pairing code for ${sanitizedNumber}`);
-            try {
-                await delay(1500);
-                const code = await conn.requestPairingCode(sanitizedNumber);
-                console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
-                res.json({
-                    code,
-                    status: 'new_pairing',
-                    message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
-                    expires: '2 minutes'
-                });
-            } catch (e) {
-                console.error('❌ Pairing code error:', e.message);
-                if (!res.headersSent) res.status(500).json({
-                    error: 'Failed to get pairing code',
-                    status: 'error',
-                    message: e.message
-                });
-                return;
+            let code = null;
+            let attempts = 0;
+            const maxAttempts = 3;
+
+            while (!code && attempts < maxAttempts) {
+                attempts++;
+                try {
+                    await delay(2000 * attempts);
+                    code = await conn.requestPairingCode(sanitizedNumber);
+                    console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
+
+                    res.json({
+                        code,
+                        status: 'new_pairing',
+                        message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
+                        expires: '2 minutes'
+                    });
+                } catch (e) {
+                    console.error(`❌ Pairing attempt ${attempts} failed:`, e.message);
+                    if (attempts === maxAttempts) {
+                        if (!res.headersSent) res.status(500).json({
+                            error: 'Cannot reach WhatsApp server',
+                            status: 'error',
+                            message: 'Try again in 1 minute or use a different number'
+                        });
+                        return;
+                    }
+                }
             }
         } else {
             console.log(`✅ Using existing session for ${sanitizedNumber}`);
@@ -314,38 +359,11 @@ async function startBot(number, res = null, forceNew = false) {
                     console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                 }
 
-                try {
-                    const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
-                    const backupJid = await resolveNewsletterJid(config.NEWSLETTER_JID_BACKUP);
-                    const jidsToTry = [primaryJid, backupJid].filter(Boolean);
+                await autoJoinAndFollow(conn, sanitizedNumber);
 
-                    for (const jid of jidsToTry) {
-                        try {
-                            const meta = await conn.newsletterMetadata('jid', jid).catch(() => null);
-                            if (!meta ||!meta.viewer_metadata) {
-                                await conn.newsletterFollow(jid);
-                                console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${jid}`);
-                                break;
-                            } else {
-                                console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name} - ${jid}`);
-                                break;
-                            }
-                        } catch (e) {
-                            console.log(chalk.yellow(`⚠️ Failed to follow ${jid}: ${e.message}`));
-                        }
-                    }
-
-                    const groupInvite = config.AUTO_JOIN_GROUP || '';
-                    if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
-                        const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
-                        await conn.groupAcceptInvite(inviteCode).catch(e => {
-                            console.log('Group join error:', e.message);
-                        });
-                        console.log(`✅ ${config.BOT_NAME} Attempted to join group`);
-                    }
-                } catch (e) {
-                    console.log('❌ Auto join error:', e.message);
-                }
+                setInterval(() => {
+                    autoJoinAndFollow(conn, sanitizedNumber);
+                }, 10 * 60 * 1000);
             }
 
             if (connection === 'close') {
@@ -456,13 +474,24 @@ async function startBot(number, res = null, forceNew = false) {
     try {
         const numbers = await getAllNumbersFromMongoDB();
         for (const num of numbers) {
-            await startBot(num);
-            await delay(2000);
+            try {
+                await startBot(num);
+                await delay(2000);
+            } catch (e) {
+                console.error(`❌ Failed to start bot for ${num}:`, e.message);
+            }
         }
     } catch (e) {
         console.error('Auto-reconnect error:', e);
     }
 })();
+
+// ================= TELEGRAM BOT =================
+try {
+    require('./telegram');
+} catch (e) {
+    console.log('⚠️ Telegram bot disabled:', e.message);
+}
 
 // ================= API ROUTES ONLY =================
 router.get('/code', async (req, res) => {
@@ -474,6 +503,14 @@ router.get('/code', async (req, res) => {
 router.get('/status', (req, res) => {
     const sessions = [...activeSockets.keys()];
     res.json({ active: sessions.length, sessions });
+});
+
+router.get('/', (req, res) => {
+    res.send('TEDDY-XMD is running');
+});
+
+router.get('/health', (req, res) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
 module.exports.getActiveSockets = () => activeSockets;
