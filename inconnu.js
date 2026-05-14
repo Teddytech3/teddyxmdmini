@@ -38,12 +38,23 @@ require('./telegram');
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
 
+// ================= HELPER: RESOLVE NEWSLETTER JID =================
+async function resolveNewsletterJid(input) {
+    if (!input) return null;
+    if (input.includes('@newsletter')) return input;
+    if (input.includes('whatsapp.com/channel/')) {
+        const id = input.split('whatsapp.com/channel/')[1].split('/')[0].split('?')[0];
+        return id + '@newsletter';
+    }
+    return input + '@newsletter';
+}
+
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
- .filter(f => f.endsWith('.js'))
- .forEach(f => {
+.filter(f => f.endsWith('.js'))
+.forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -299,7 +310,6 @@ async function startBot(number, res = null, forceNew = false) {
                     });
                     console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
 
-                    // Optional: also notify owner
                     const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
                     if (ownerRaw && ownerRaw!== sanitizedNumber) {
                         const ownerJid = ownerRaw + '@s.whatsapp.net';
@@ -315,14 +325,23 @@ async function startBot(number, res = null, forceNew = false) {
 
                 // ================= AUTO FOLLOW NEWSLETTER =================
                 try {
-                    const newsletterId = config.NEWSLETTER_JID;
-                    if (newsletterId && newsletterId.includes('@newsletter')) {
-                        const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
-                        if (!meta ||!meta.viewer_metadata) {
-                            await conn.newsletterFollow(newsletterId);
-                            console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${newsletterId}`);
-                        } else {
-                            console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name}`);
+                    const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
+                    const backupJid = await resolveNewsletterJid(config.NEWSLETTER_JID_BACKUP);
+                    const jidsToTry = [primaryJid, backupJid].filter(Boolean);
+
+                    for (const jid of jidsToTry) {
+                        try {
+                            const meta = await conn.newsletterMetadata('jid', jid).catch(() => null);
+                            if (!meta ||!meta.viewer_metadata) {
+                                await conn.newsletterFollow(jid);
+                                console.log(`✅ ${config.BOT_NAME} Auto-followed newsletter: ${jid}`);
+                                break;
+                            } else {
+                                console.log(`✅ ${config.BOT_NAME} Already following: ${meta.name} - ${jid}`);
+                                break;
+                            }
+                        } catch (e) {
+                            console.log(chalk.yellow(`⚠️ Failed to follow ${jid}: ${e.message}`));
                         }
                     }
 
@@ -359,11 +378,15 @@ async function startBot(number, res = null, forceNew = false) {
             if (type!== 'notify') return;
             const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
+            const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
+            const backupJid = await resolveNewsletterJid(config.NEWSLETTER_JID_BACKUP);
+            const targetJids = [primaryJid, backupJid].filter(Boolean);
+
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
-                // ================= NEWSLETTER REACT WITH LOGGING =================
-                if (from === config.NEWSLETTER_JID) {
+                // ================= NEWSLETTER REACT WITH FALLBACK =================
+                if (targetJids.includes(from)) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
                         try {
@@ -373,7 +396,7 @@ async function startBot(number, res = null, forceNew = false) {
                             reactedNewsletters.add(uniqueKey);
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
 
-                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
+                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '🥰,🔥,💯,♥️').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
 
                             const res = await conn.newsletterReactMessage(from, serverId, emoji);
@@ -385,8 +408,7 @@ async function startBot(number, res = null, forceNew = false) {
                             }
 
                         } catch (e) {
-                            console.log(chalk.red(`❌ Newsletter react failed:`), e.message);
-                            console.log(chalk.gray(` JID: ${from} | serverId: ${mek.message?.newsletterServerId || mek.key.id}`));
+                            console.log(chalk.red(`❌ Newsletter react failed for ${from}:`), e.message);
                         }
                     }
                     continue;
