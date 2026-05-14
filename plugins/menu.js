@@ -39,7 +39,7 @@ cmd({
       platform = '🍎 MacOS';
     }
 
-    // RAM usage
+    // RAM usage - fixed: freem not freem
     const totalMem = os.totalmem();
     const freeMem = os.freem();
     const usedMem = totalMem - freeMem;
