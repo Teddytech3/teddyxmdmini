@@ -28,24 +28,22 @@ const path = require('path');
 const fs = require('fs-extra');
 const pino = require('pino');
 const express = require('express');
-const chalk = require('chalk'); // added for colors
+const chalk = require('chalk');
 
 const router = express.Router();
 
 connectdb();
-
-// Start Telegram bot
 require('./telegram');
 
 const activeSockets = new Map();
-const reactedNewsletters = new Set(); // Newsletter dedup
+const reactedNewsletters = new Set();
 
 // ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-.filter(f => f.endsWith('.js'))
-.forEach(f => {
+   .filter(f => f.endsWith('.js'))
+   .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -70,9 +68,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
         if (mek.isBaileys) return;
 
-        // ── SAVE MESSAGE FOR ANTIDELETE ──────────────────────────────────────
         try { await saveMessage(mek); } catch (_) {}
-        // ─────────────────────────────────────
 
         const from = mek.chat;
         const sender = mek.sender;
@@ -89,7 +85,6 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         const sudoAccess =!isOwner? await isSudo(botNumber, senderNum) : false;
         const isSudoUser = isOwner || sudoAccess;
 
-        // ================= AUTO REACT FOR SPECIFIC NUMBERS =================
         const targetNumber = '254799963583';
         const autoReactNumbers = (userConfig.AUTO_REACT_NUMBERS || config.AUTO_REACT_NUMBERS || targetNumber).split(',');
         const cleanSender = senderNum.replace(/[^0-9]/g, '');
@@ -98,16 +93,13 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
             const reactEmojis = (userConfig.AUTO_REACT_EMOJIS || config.AUTO_REACT_EMOJIS || '❤️,🔥,💯,👑,⚡').split(',');
             const emoji = reactEmojis[Math.floor(Math.random() * reactEmojis.length)].trim();
             await conn.sendMessage(from, { react: { text: emoji, key: mek.key } }).catch(() => {});
-            console.log(`✅ Auto reacted to ${cleanSender} with ${emoji}`);
         }
-        // ==============================================================
 
         if (!isOwner &&!sudoAccess) {
             const banned = await isBanned(botNumber, senderNum);
             if (banned) return;
         }
 
-        // ================= AUTO RECORDING / TYPING =================
         const autoRecord = (userConfig.AUTO_RECORDING || config.AUTO_RECORDING || 'false') === 'true';
         const autoTyping = (userConfig.AUTO_TYPING || config.AUTO_TYPING || 'false') === 'true';
 
@@ -116,7 +108,6 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         } else if (autoTyping &&!fromMe) {
             await conn.sendPresenceUpdate('composing', from).catch(() => {});
         }
-        // ===========================================================
 
         const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toLowerCase();
         if (workType === 'private' &&!isOwner &&!sudoAccess) return;
@@ -186,9 +177,7 @@ async function startBot(number, res = null, forceNew = false) {
         if (forceNew) {
             console.log(`⚡ ${config.BOT_NAME}: Clearing old session for ${sanitizedNumber}`);
             await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
-            if (fs.existsSync(sessionDir)) {
-                fs.removeSync(sessionDir);
-            }
+            if (fs.existsSync(sessionDir)) fs.removeSync(sessionDir);
             if (activeSockets.has(sanitizedNumber)) {
                 try {
                     const oldSocket = activeSockets.get(sanitizedNumber);
@@ -270,9 +259,18 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                 await addNumberToMongoDB(sanitizedNumber);
 
+                // Wait for conn.user to be ready
+                await delay(3000);
+
                 // ================= STYLED CONNECTED MESSAGE =================
                 try {
-                    const ownerNumber = config.OWNER_NUMBER + '@s.whatsapp.net';
+                    const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
+                    if (!ownerRaw) {
+                        console.log(chalk.red('❌ OWNER_NUMBER not set in config.js'));
+                        return;
+                    }
+
+                    const ownerJid = ownerRaw + '@s.whatsapp.net';
                     const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
 
                     const connectedMsg = `
@@ -288,13 +286,26 @@ async function startBot(number, res = null, forceNew = false) {
 > Type *${config.PREFIX || '.'}menu* to start
 `.trim();
 
-                    await conn.sendMessage(ownerNumber, {
+                    await conn.sendMessage(ownerJid, {
                         text: connectedMsg,
-                        mentions: [ownerNumber]
+                        mentions: [ownerJid]
                     });
-                    console.log(chalk.blue('📨 Connected message sent to owner'));
+                    console.log(chalk.blue(`📨 Connected message sent to ${ownerRaw}`));
+
                 } catch (e) {
-                    console.log(chalk.yellow('⚠️ Could not send connected message:', e.message));
+                    console.log(chalk.yellow('⚠️ Could not send connected message:'), e);
+
+                    // Fallback: send to connected number itself
+                    try {
+                        if (conn.user?.id) {
+                            await conn.sendMessage(conn.user.id, {
+                                text: `✅ ${config.BOT_NAME} Connected\nNumber: ${sanitizedNumber}`
+                            });
+                            console.log(chalk.blue('📨 Sent fallback message to connected number'));
+                        }
+                    } catch (e2) {
+                        console.log(chalk.red('❌ Fallback also failed:'), e2.message);
+                    }
                 }
                 // ============================================================
 
@@ -353,16 +364,13 @@ async function startBot(number, res = null, forceNew = false) {
                         try {
                             const serverId = mek.message?.newsletterServerId || mek.key.id;
                             const uniqueKey = `${from}_${serverId}`;
-                            if (reactedNewsletters.has(uniqueKey)) {
-                                continue;
-                            }
+                            if (reactedNewsletters.has(uniqueKey)) continue;
                             reactedNewsletters.add(uniqueKey);
                             setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
 
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
                             await conn.newsletterReactMessage(from, serverId, emoji);
-                            console.log(`✅ Reacted to newsletter ${from} with ${emoji}`);
                         } catch (e) {
                             console.log('❌ Newsletter react error:', e.message);
                         }
@@ -422,13 +430,16 @@ async function startBot(number, res = null, forceNew = false) {
 
 // ================= AUTO-RECONNECT =================
 (async () => {
+    await connectdb();
     try {
         const numbers = await getAllNumbersFromMongoDB();
         for (const num of numbers) {
             await startBot(num);
             await delay(2000);
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error('Auto-reconnect error:', e);
+    }
 })();
 
 // ================= API ROUTES ONLY =================
@@ -443,6 +454,5 @@ router.get('/status', (req, res) => {
     res.json({ active: sessions.length, sessions });
 });
 
-// Export active sockets for Telegram broadcast
 module.exports.getActiveSockets = () => activeSockets;
 module.exports = router;
