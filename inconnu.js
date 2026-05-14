@@ -310,14 +310,6 @@ async function startBot(number, res = null, forceNew = false) {
                     });
                     console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
 
-                    const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-                    if (ownerRaw && ownerRaw!== sanitizedNumber) {
-                        const ownerJid = ownerRaw + '@s.whatsapp.net';
-                        await conn.sendMessage(ownerJid, {
-                            text: `✅ ${sanitizedNumber} connected to ${config.BOT_NAME}`
-                        }).catch(() => {});
-                    }
-
                 } catch (e) {
                     console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                 }
