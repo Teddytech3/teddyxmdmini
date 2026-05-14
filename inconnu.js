@@ -74,6 +74,9 @@ try {
 // ================= MESSAGE HANDLER =================
 async function handleMessage(conn, mek, botNumber, userConfig) {
     try {
+        // Wait until bot is fully ready
+        if (!conn.user ||!conn.user.id) return;
+
         mek = sms(conn, mek);
         if (!mek.message) return;
         if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
@@ -129,6 +132,8 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         if (!isCmd) return;
 
         const cmdText = body.slice(prefix.length).trim();
+        if (!cmdText) return;
+
         const cmdName = cmdText.split(' ')[0].toLowerCase();
         const args = cmdText.split(' ').slice(1);
         const q = args.join(' ');
@@ -368,6 +373,8 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type!== 'notify') return;
+            if (!conn.user ||!conn.user.id) return; // Ignore messages until socket is ready
+
             const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
             const primaryJid = await resolveNewsletterJid(config.NEWSLETTER_JID);
