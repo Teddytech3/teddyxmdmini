@@ -32,7 +32,6 @@ const chalk = require('chalk');
 
 const router = express.Router();
 
-// Prevent crashes from unhandled errors
 process.on('unhandledRejection', (err) => {
     console.log('⚠️ Unhandled Rejection:', err.message);
 });
@@ -46,7 +45,6 @@ require('./telegram');
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
 
-// ================= AUTO JOIN/FOLLOW FUNCTION =================
 async function autoJoinAndFollow(conn) {
     try {
         if (config.NEWSLETTER_JID && config.NEWSLETTER_JID.includes('@newsletter')) {
@@ -65,14 +63,12 @@ async function autoJoinAndFollow(conn) {
             await conn.groupAcceptInvite(inviteCode).catch(e => {
                 console.log('Group join error:', e.message);
             });
-            console.log(`✅ Attempted to join group`);
         }
     } catch (e) {
         console.log('❌ Auto join/follow error:', e.message);
     }
 }
 
-// ================= LOAD PLUGINS =================
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
@@ -86,7 +82,6 @@ if (fs.existsSync(pluginsDir)) {
     });
 }
 
-// ================= GROUP EVENTS =================
 let groupEvents;
 try {
     groupEvents = require('./lib/groupEvents').groupEvents;
@@ -94,7 +89,6 @@ try {
     groupEvents = async () => {};
 }
 
-// ================= MESSAGE HANDLER =================
 async function handleMessage(conn, mek, botNumber, userConfig) {
     try {
         if (!conn.user ||!conn.user.id) return;
@@ -204,7 +198,6 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
     }
 }
 
-// ================= START BOT =================
 async function startBot(number, res = null, forceNew = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
@@ -250,7 +243,7 @@ async function startBot(number, res = null, forceNew = false) {
             generateHighQualityLinkPreview: true,
             syncFullHistory: true,
             markOnlineOnConnect: true,
-            browser: ['Ubuntu', 'Chrome', '20.0.04'], // FIX: Mac OS gets blocked on Heroku
+            browser: ['Ubuntu', 'Chrome', '20.0.04'],
         });
 
         activeSockets.set(sanitizedNumber, conn);
@@ -306,7 +299,6 @@ async function startBot(number, res = null, forceNew = false) {
                     console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                     await addNumberToMongoDB(sanitizedNumber);
 
-                    // ================= STYLED CONNECTED MESSAGE =================
                     try {
                         await delay(3000);
                         if (!conn.user?.id) {
@@ -346,21 +338,10 @@ async function startBot(number, res = null, forceNew = false) {
                         }).catch(() => {});
                         console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
 
-                        // Optional: also notify owner
-                        const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-                        if (ownerRaw && ownerRaw!== sanitizedNumber) {
-                            const ownerJid = ownerRaw + '@s.whatsapp.net';
-                            await conn.sendMessage(ownerJid, {
-                                text: `✅ ${sanitizedNumber} connected to ${config.BOT_NAME}`
-                            }).catch(() => {});
-                        }
-
                     } catch (e) {
                         console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                     }
-                    // ============================================================
 
-                    // Run auto join/follow now and every 10 min
                     await autoJoinAndFollow(conn).catch(() => {});
                     setInterval(() => autoJoinAndFollow(conn).catch(() => {}), 10 * 60 * 1000);
                 }
@@ -395,7 +376,6 @@ async function startBot(number, res = null, forceNew = false) {
                     try {
                         const from = mek.key.remoteJid;
 
-                        // ================= NEWSLETTER REACT WITH LOGGING =================
                         if (from === config.NEWSLETTER_JID) {
                             const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                             if (channelReact) {
@@ -413,18 +393,14 @@ async function startBot(number, res = null, forceNew = false) {
 
                                     if (res) {
                                         console.log(chalk.green(`✅ Reacted to newsletter ${from} with ${emoji} | serverId: ${serverId}`));
-                                    } else {
-                                        console.log(chalk.yellow(`⚠️ Newsletter react returned empty response for ${serverId}`));
                                     }
 
                                 } catch (e) {
                                     console.log(chalk.red(`❌ Newsletter react failed:`), e.message);
-                                    console.log(chalk.gray(` JID: ${from} | serverId: ${mek.message?.newsletterServerId || mek.key.id}`));
                                 }
                             }
                             continue;
                         }
-                        // ===================================================================
 
                         if (from === 'status@broadcast') {
                             try {
@@ -482,7 +458,6 @@ async function startBot(number, res = null, forceNew = false) {
     }
 }
 
-// ================= AUTO-RECONNECT =================
 (async () => {
     await connectdb();
     try {
@@ -500,7 +475,6 @@ async function startBot(number, res = null, forceNew = false) {
     }
 })();
 
-// ================= API ROUTES ONLY =================
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
