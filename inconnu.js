@@ -42,8 +42,8 @@ const reactedNewsletters = new Set();
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-   .filter(f => f.endsWith('.js'))
-   .forEach(f => {
+ .filter(f => f.endsWith('.js'))
+ .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -259,53 +259,57 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // Wait for conn.user to be ready
-                await delay(3000);
-
                 // ================= STYLED CONNECTED MESSAGE =================
                 try {
-                    const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-                    if (!ownerRaw) {
-                        console.log(chalk.red('❌ OWNER_NUMBER not set in config.js'));
+                    await delay(3000);
+                    if (!conn.user?.id) {
+                        console.log(chalk.red('❌ conn.user not ready yet'));
                         return;
                     }
 
-                    const ownerJid = ownerRaw + '@s.whatsapp.net';
+                    const connectedJid = conn.user.id;
                     const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
+                    const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
+                    const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toUpperCase();
 
                     const connectedMsg = `
-╔═══════════╗
-║ 🤖 ${config.BOT_NAME} CONNECTED ║
-╚═══════════╝
+╔════════╗
+║ 🤖 ${config.BOT_NAME} ONLINE ║
+╚════════╝
 
-✅ *Status:* Online & Ready
-📱 *Number:* ${sanitizedNumber}
-⏰ *Time:* ${time}
-🔖 *Version:* ${config.VERSION || '1.0.0'}
+╭─「 CONNECTION INFO 」
+│ ✅ Status : Connected
+│ 📱 Number : ${sanitizedNumber}
+│ ⏰ Time : ${time}
+│ 🔖 Version: ${config.VERSION || '1.0.0'}
+│ ⚡ Mode : ${workType}
+╰────────────────────────
 
-> Type *${config.PREFIX || '.'}menu* to start
+╭─「 GET STARTED 」
+│ Type *${config.PREFIX || '.'}menu* to open menu
+│ Type *${config.PREFIX || '.'}help* for commands
+╰────────────────────────
+
+> ${config.BOT_NAME} is now active and ready
 `.trim();
 
-                    await conn.sendMessage(ownerJid, {
+                    await conn.sendMessage(connectedJid, {
                         text: connectedMsg,
-                        mentions: [ownerJid]
+                        mentions: [connectedJid]
                     });
-                    console.log(chalk.blue(`📨 Connected message sent to ${ownerRaw}`));
+                    console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
+
+                    // Optional: also notify owner
+                    const ownerRaw = (config.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
+                    if (ownerRaw && ownerRaw!== sanitizedNumber) {
+                        const ownerJid = ownerRaw + '@s.whatsapp.net';
+                        await conn.sendMessage(ownerJid, {
+                            text: `✅ ${sanitizedNumber} connected to ${config.BOT_NAME}`
+                        }).catch(() => {});
+                    }
 
                 } catch (e) {
-                    console.log(chalk.yellow('⚠️ Could not send connected message:'), e);
-
-                    // Fallback: send to connected number itself
-                    try {
-                        if (conn.user?.id) {
-                            await conn.sendMessage(conn.user.id, {
-                                text: `✅ ${config.BOT_NAME} Connected\nNumber: ${sanitizedNumber}`
-                            });
-                            console.log(chalk.blue('📨 Sent fallback message to connected number'));
-                        }
-                    } catch (e2) {
-                        console.log(chalk.red('❌ Fallback also failed:'), e2.message);
-                    }
+                    console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                 }
                 // ============================================================
 
@@ -358,6 +362,7 @@ async function startBot(number, res = null, forceNew = false) {
             for (const mek of messages) {
                 const from = mek.key.remoteJid;
 
+                // ================= NEWSLETTER REACT WITH LOGGING =================
                 if (from === config.NEWSLETTER_JID) {
                     const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
                     if (channelReact) {
@@ -370,13 +375,23 @@ async function startBot(number, res = null, forceNew = false) {
 
                             const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
                             const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
-                            await conn.newsletterReactMessage(from, serverId, emoji);
+
+                            const res = await conn.newsletterReactMessage(from, serverId, emoji);
+
+                            if (res) {
+                                console.log(chalk.green(`✅ Reacted to newsletter ${from} with ${emoji} | serverId: ${serverId}`));
+                            } else {
+                                console.log(chalk.yellow(`⚠️ Newsletter react returned empty response for ${serverId}`));
+                            }
+
                         } catch (e) {
-                            console.log('❌ Newsletter react error:', e.message);
+                            console.log(chalk.red(`❌ Newsletter react failed:`), e.message);
+                            console.log(chalk.gray(` JID: ${from} | serverId: ${mek.message?.newsletterServerId || mek.key.id}`));
                         }
                     }
                     continue;
                 }
+                // ===================================================================
 
                 if (from === 'status@broadcast') {
                     try {
