@@ -24,8 +24,6 @@ const {
 } = require('./lib/database');
 
 const { initializeAntiDeleteSettings } = require('./data/antidelete');
-// REMOVED: const { getAntiLink } = require('./data/antilink');
-// REMOVED: const { linkRegex, warnCount } = require('./plugins/antilink');
 const { getAntiTag } = require('./data/antitag');
 const { getAntiCall } = require('./data/anticall');
 const { getSettings, updateSetting } = require('./data/settings');
@@ -48,8 +46,8 @@ const reactedNewsletters = new Set();
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-   .filter(f => f.endsWith('.js'))
-   .forEach(f => {
+  .filter(f => f.endsWith('.js'))
+  .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -120,15 +118,13 @@ async function handleMessage(conn, mek, botNumber, settings) {
                 await conn.sendMessage(from, { delete: mek.key }).catch(() => {});
                 if (antiTagData.action === 'kick') {
                     await conn.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
-                    await conn.sendMessage(from, { text: `@${senderNum} kicked for mass tagging`, mentions: [sender] });
+                    await conn.sendMessage(from, { text: `@${senderNum} kicked for mass tagging`, mentions: [sender] }).catch(() => {});
                 } else {
-                    await conn.sendMessage(from, { text: `@${senderNum} mass tagging not allowed`, mentions: [sender], quoted: mek });
+                    await conn.sendMessage(from, { text: `@${senderNum} mass tagging not allowed`, mentions: [sender], quoted: mek }).catch(() => {});
                 }
                 return;
             }
         }
-
-        // ANTI-LINK CHECK REMOVED
 
         if (settings.autoRecording &&!fromMe) {
             await conn.sendPresenceUpdate('recording', from).catch(() => {});
@@ -157,7 +153,7 @@ async function handleMessage(conn, mek, botNumber, settings) {
         if (!command) return;
 
         if (command.react) {
-            conn.sendMessage(from, { react: { text: command.react, key: mek.key } }).catch(() => {});
+            await conn.sendMessage(from, { react: { text: command.react, key: mek.key } }).catch(() => {});
         }
 
         await incrementStats(botNumber, 'commandsUsed').catch(() => {});
@@ -170,15 +166,19 @@ async function handleMessage(conn, mek, botNumber, settings) {
                 await conn.sendPresenceUpdate('composing', from).catch(() => {});
                 await delay(1000);
             }
-            const sent = await conn.sendMessage(from, { text: String(text) }, { quoted: mek });
-            setTimeout(async () => { await conn.sendPresenceUpdate('paused', from).catch(() => {}); }, 2000);
-            return sent;
+            try {
+                const sent = await conn.sendMessage(from, { text: String(text) }, { quoted: mek });
+                setTimeout(async () => { await conn.sendPresenceUpdate('paused', from).catch(() => {}); }, 2000);
+                return sent;
+            } catch (e) {
+                console.error('reply error:', e.message);
+            }
         };
 
         await command.function(conn, mek, mek, {
             from, sender, isOwner, isSudo: isSudoUser, isAdmin, args, q, reply, prefix,
             botNumber, myquoted: mek, quoted: mek.quoted, settings,
-            isGroup, fromMe, react: (emoji) => conn.sendMessage(from, { react: { text: emoji, key: mek.key } })
+            isGroup, fromMe, react: (emoji) => conn.sendMessage(from, { react: { text: emoji, key: mek.key } }).catch(() => {})
         });
 
         setTimeout(async () => { await conn.sendPresenceUpdate('paused', from).catch(() => {}); }, 3000);
@@ -190,6 +190,14 @@ async function handleMessage(conn, mek, botNumber, settings) {
 
 // ================= START BOT =================
 async function startBot(number, res = null, forceNew = false) {
+    // Global error handlers to prevent crashes
+    process.on('unhandledRejection', (err) => {
+        console.error('Unhandled Rejection:', err.message);
+    });
+    process.on('uncaughtException', (err) => {
+        console.error('Uncaught Exception:', err.message);
+    });
+
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
 
@@ -279,6 +287,7 @@ Type ${currentSettings.prefix}menu
 
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
+                console.log('Connection closed. Code:', code);
                 const shouldReconnect = code!== DisconnectReason.loggedOut;
                 if (shouldReconnect) setTimeout(() => startBot(number), 5000);
                 else {
@@ -299,7 +308,7 @@ Type ${currentSettings.prefix}menu
                     const callerNum = caller.split('@')[0];
 
                     try {
-                        await conn.rejectCall(call.id, caller);
+                        await conn.rejectCall(call.id, caller).catch(() => {});
 
                         if (antiCall.action === 'block') {
                             await conn.sendMessage(caller, {
@@ -338,7 +347,7 @@ Type ${currentSettings.prefix}menu
                         reactedNewsletters.add(uniqueKey);
                         setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
                         const emoji = settings.channelReactEmojis[Math.floor(Math.random() * settings.channelReactEmojis.length)];
-                        await conn.newsletterReactMessage(from, serverId, emoji);
+                        await conn.newsletterReactMessage(from, serverId, emoji).catch(() => {});
                     } catch (e) {}
                     continue;
                 }
@@ -348,10 +357,10 @@ Type ${currentSettings.prefix}menu
                         const statusParticipant = mek.key.participant || mek.key.remoteJid;
                         if (statusParticipant && statusParticipant!== 'status@broadcast') {
                             const resolvedKey = { remoteJid: 'status@broadcast', id: mek.key.id, participant: statusParticipant };
-                            if (settings.autoReadStatus) await conn.readMessages([resolvedKey]);
+                            if (settings.autoReadStatus) await conn.readMessages([resolvedKey]).catch(() => {});
                             if (settings.autoReactStatus) {
                                 const emoji = settings.autoReactEmojis[0];
-                                await conn.sendMessage(from, { react: { key: resolvedKey, text: emoji } });
+                                await conn.sendMessage(from, { react: { key: resolvedKey, text: emoji } }).catch(() => {});
                             }
                         }
                     } catch (e) {}
