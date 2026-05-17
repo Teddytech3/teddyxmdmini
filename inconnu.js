@@ -24,8 +24,8 @@ const {
 } = require('./lib/database');
 
 const { initializeAntiDeleteSettings } = require('./data/antidelete');
-const { getAntiLink } = require('./data/antilink');
-const { linkRegex, warnCount } = require('./plugins/antilink');
+// REMOVED: const { getAntiLink } = require('./data/antilink');
+// REMOVED: const { linkRegex, warnCount } = require('./plugins/antilink');
 const { getAntiTag } = require('./data/antitag');
 const { getAntiCall } = require('./data/anticall');
 const { getSettings, updateSetting } = require('./data/settings');
@@ -48,8 +48,8 @@ const reactedNewsletters = new Set();
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-.filter(f => f.endsWith('.js'))
-.forEach(f => {
+   .filter(f => f.endsWith('.js'))
+   .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
         } catch (e) {
@@ -79,7 +79,7 @@ async function handleMessage(conn, mek, botNumber, settings) {
         const from = mek.chat;
         const sender = mek.sender;
         const body = mek.body || '';
-        const isGroup = mek.isGroup; // <- fixed: define it here
+        const isGroup = mek.isGroup;
         const fromMe = mek.fromMe;
 
         const prefix = settings.prefix;
@@ -128,34 +128,7 @@ async function handleMessage(conn, mek, botNumber, settings) {
             }
         }
 
-        // ================= ANTI-LINK CHECK =================
-        const antiLinkData = await getAntiLink(botNumber, from);
-        if (antiLinkData.status &&!isAdmin &&!isOwner && linkRegex.test(body)) {
-            const isWhitelisted = antiLinkData.whitelist.some(domain => body.includes(domain));
-            if (!isWhitelisted) {
-                await conn.sendMessage(from, { delete: mek.key }).catch(() => {});
-
-                const key = `${botNumber}:${from}:${sender}`;
-                const currentWarns = (warnCount.get(key) || 0) + 1;
-                warnCount.set(key, currentWarns);
-
-                if (antiLinkData.action === 'warn') {
-                    if (currentWarns >= antiLinkData.warnLimit) {
-                        await conn.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
-                        await conn.sendMessage(from, { text: `@${senderNum} kicked for ${currentWarns}/${antiLinkData.warnLimit} warnings`, mentions: [sender] });
-                        warnCount.delete(key);
-                    } else {
-                        await conn.sendMessage(from, { text: `@${senderNum} Warning ${currentWarns}/${antiLinkData.warnLimit}. No links allowed`, mentions: [sender], quoted: mek });
-                    }
-                } else if (antiLinkData.action === 'kick') {
-                    await conn.groupParticipantsUpdate(from, [sender], 'remove').catch(() => {});
-                    await conn.sendMessage(from, { text: `@${senderNum} removed for sending links`, mentions: [sender] });
-                } else {
-                    await conn.sendMessage(from, { text: `@${senderNum} links not allowed here`, mentions: [sender], quoted: mek });
-                }
-                return;
-            }
-        }
+        // ANTI-LINK CHECK REMOVED
 
         if (settings.autoRecording &&!fromMe) {
             await conn.sendPresenceUpdate('recording', from).catch(() => {});
