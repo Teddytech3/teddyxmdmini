@@ -1,26 +1,24 @@
 const mongoose = require('mongoose');
 
-// delete cached model if it exists to prevent strict mode errors
+// delete cached model if it exists
 if (mongoose.models.AntiDel) {
     delete mongoose.models.AntiDel;
 }
 
 // ─── Mongoose Schema ─────────────────────────────────────────────────────────
 const antiDelSchema = new mongoose.Schema({
-    userId: { type: String, required: true }, // connected bot number
-    chatId: { type: String, required: true }, // 'gc', 'dm', or specific chat jid
+    userId: { type: String, required: true },
+    chatId: { type: String, required: true },
     type: { type: String, enum: ['gc', 'dm', 'chat'], default: 'chat' },
     status: { type: Boolean, default: false },
 }, { strict: false });
 
-antiDelSchema.index({ userId: 1, chatId: 1 }, { unique: true });
-
+// removed the index line to avoid E11000 errors with old indexes
 const AntiDelDB = mongoose.model('AntiDel', antiDelSchema);
 
 // ─── In-memory fallback ──────────────────────
-const memoryCache = new Map(); // key: userId:chatId
+const memoryCache = new Map();
 
-// ─── Helpers ──────────────────────────────────
 const isMongoReady = () => mongoose.connection.readyState === 1;
 const makeKey = (userId, chatId) => `${userId}:${chatId}`;
 
@@ -93,8 +91,8 @@ const getAllAntiDeleteSettings = async (userId) => {
             return await AntiDelDB.find({ userId });
         }
         return [...memoryCache.entries()]
-         .filter(([k]) => k.startsWith(userId + ':'))
-         .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
+        .filter(([k]) => k.startsWith(userId + ':'))
+        .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
     } catch (e) {
         return [];
     }
