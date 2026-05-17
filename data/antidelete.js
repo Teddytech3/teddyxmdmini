@@ -6,7 +6,7 @@ const antiDelSchema = new mongoose.Schema({
     chatId: { type: String, required: true }, // 'gc', 'dm', or specific chat jid
     type: { type: String, enum: ['gc', 'dm', 'chat'], default: 'chat' },
     status: { type: Boolean, default: false },
-});
+}, { strict: false }); // <-- added to prevent "Path not in schema" errors
 
 antiDelSchema.index({ userId: 1, chatId: 1 }, { unique: true });
 
@@ -88,8 +88,8 @@ const getAllAntiDeleteSettings = async (userId) => {
             return await AntiDelDB.find({ userId });
         }
         return [...memoryCache.entries()]
-          .filter(([k]) => k.startsWith(userId + ':'))
-          .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
+         .filter(([k]) => k.startsWith(userId + ':'))
+         .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
     } catch (e) {
         return [];
     }
