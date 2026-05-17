@@ -25,7 +25,7 @@ const {
 
 const { initializeAntiDeleteSettings } = require('./data/antidelete');
 const { getAntiLink } = require('./data/antilink');
- const { linkRegex, warnCount } = require('./plugins/antilink');
+const { linkRegex, warnCount } = require('./plugins/antilink');
 const { getAntiTag } = require('./data/antitag');
 const { getAntiCall } = require('./data/anticall');
 const { getSettings, updateSetting } = require('./data/settings');
@@ -79,7 +79,7 @@ async function handleMessage(conn, mek, botNumber, settings) {
         const from = mek.chat;
         const sender = mek.sender;
         const body = mek.body || '';
-        const isGroup = mek.isGroup;
+        const isGroup = mek.isGroup; // <- fixed: define it here
         const fromMe = mek.fromMe;
 
         const prefix = settings.prefix;
@@ -290,12 +290,13 @@ async function startBot(number, res = null, forceNew = false) {
                 }
 
                 const currentSettings = await getSettings(sanitizedNumber);
+                const antiCallStatus = await getAntiCall(sanitizedNumber);
                 const connectedMsg = `
 🤖 ${config.BOT_NAME} ONLINE
 
 Prefix: ${currentSettings.prefix}
 Mode: ${currentSettings.workType}
-Anti-call: ${await getAntiCall(sanitizedNumber).then(d => d.status? 'ON' : 'OFF')}
+Anti-call: ${antiCallStatus.status? 'ON' : 'OFF'}
 
 Type ${currentSettings.prefix}menu
 `.trim();
