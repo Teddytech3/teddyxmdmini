@@ -1,109 +1,47 @@
-const { cmd } = require("../inconnuboy");
-const config = require("../config");
+const { cmd } = require('../inconnuboy');
+const { setAntiLink, getAntiLink } = require('../data/antilink'); // fixed spelling
 
-// ================================
-// ANTI DELETE EVENT LISTENER
-// ================================
-
-cmd({ on: "messages.update" }, async (client, updates) => {
-    try {
-        if (!config.ANTI_DELETE) return;
-
-        for (const update of updates) {
-
-            if (!update.update) continue;
-
-            const protocol = update.update.protocolMessage;
-
-            // Detect delete for everyone
-            if (protocol && protocol.type === 0) {
-
-                const key = protocol.key;
-
-                // Try loading original message from store
-                const originalMsg = await client.loadMessage?.(key.remoteJid, key.id);
-
-                if (!originalMsg) return;
-
-                const sender = key.participant || key.remoteJid;
-
-                const caption =
-`*🚫 ANTI DELETE DETECTED 🚫*
-
-👤 *User:* @${sender.split("@")[0]}
-🕒 *Time:* ${new Date().toLocaleString()}
-
-_Recovered deleted message below_`;
-
-                // Send alert
-                await client.sendMessage(client.user.id, {
-                    text: caption,
-                    mentions: [sender]
-                });
-
-                // Forward deleted message
-                await client.copyNForward(
-                    client.user.id,
-                    originalMsg,
-                    true
-                );
-            }
-        }
-
-    } catch (err) {
-        console.log("AntiDelete Error:", err);
-    }
-});
-
-
-// ================================
-// ANTI DELETE TOGGLE COMMAND
-// ================================
+const linkRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|t\.me\/[^\s]+|wa\.me\/[^\s]+|chat\.whatsapp\.com\/[^\s]+)/gi;
+const warnCount = new Map();
 
 cmd({
-    pattern: "antidelete",
-    alias: ["nodelete","atd"],
-    desc: "Toggle Anti Delete",
-    category: "owner",
-    react: "🗑️",
-    filename: __filename,
-    fromMe: true
+    pattern: "antilink",
+    desc: "Manage anti-link settings",
+    category: "group",
+    react: "🔗",
+    use: ".antilink on/off delete/kick/warn",
+    filename: __filename
 },
-async (client, message, m, { args, from }) => {
+async(conn, mek, m, { args, isOwner, isAdmin, isGroup, reply, from, botNumber }) => {
+    if (!isGroup) return reply("❌ Group only");
+    if (!isAdmin &&!isOwner) return reply("❌ Admin only");
 
-    try {
+    const mode = args[0]?.toLowerCase();
+    const action = args[1]?.toLowerCase() || 'delete';
 
-        const action = args[0]?.toLowerCase();
-
-        if (action === "on") {
-            config.ANTI_DELETE = true;
-
-            return await client.sendMessage(from,{
-                text: "✅ *Anti Delete Enabled*\nDeleted messages will be restored."
-            },{ quoted: message });
+    if (mode === 'on') {
+        await setAntiLink(botNumber, from, true, action);
+        return reply(`*✅ Anti-link ON*\nAction: ${action}`);
+    }
+    if (mode === 'off') {
+        await setAntiLink(botNumber, from, false);
+        return reply("*❌ Anti-link OFF*");
+    }
+    if (mode === 'limit' && args[1]) {
+        await setAntiLink(botNumber, from, true, action, parseInt(args[1]));
+        return reply(`*✅ Warn limit set to ${args[1]}*`);
+    }
+    if (mode === 'addwl' && args[1]) {
+        const data = await getAntiLink(botNumber, from);
+        if (!data.whitelist.includes(args[1])) {
+            data.whitelist.push(args[1]);
+            await setAntiLink(botNumber, from, data.status, data.action, data.warnLimit, data.whitelist);
         }
-
-        if (action === "off") {
-            config.ANTI_DELETE = false;
-
-            return await client.sendMessage(from,{
-                text: "❌ *Anti Delete Disabled*"
-            },{ quoted: message });
-        }
-
-        return await client.sendMessage(from,{
-            text: `🗑️ *Anti Delete Status*\n\n${
-                config.ANTI_DELETE ? "✅ Enabled" : "❌ Disabled"
-            }`
-        },{ quoted: message });
-
-    } catch(e) {
-
-        console.log("Command Error:",e)
-
-        await client.sendMessage(from,{
-            text:"⚠️ Error occurred."
-        })
+        return reply(`*✅ Added ${args[1]} to whitelist*`);
     }
 
+    const data = await getAntiLink(botNumber, from);
+    return reply(`*🔗 ANTI-LINK*\nStatus: ${data.status? 'ON ✅' : 'OFF ❌'}\nAction: ${data.action}\nWarn Limit: ${data.warnLimit}\nWhitelist: ${data.whitelist.join(', ') || 'none'}`);
 });
+
+module.exports = { linkRegex, warnCount };
