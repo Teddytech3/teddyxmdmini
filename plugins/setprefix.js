@@ -1,66 +1,25 @@
-const fs = require('fs');
-const path = require('path');
+const { cmd } = require('../inconnuboy');
+const { setPrefix, getPrefix } = require('../data/settings');
 
-module.exports = {
-  name: "setprefix",
-  alias: ["prefix", "setpfx"],
-  desc: "Change bot command prefix. Owner only.",
-  category: "owner",
-  react: "⚙️",
-  start: async (conn, mek, m, { isOwner, text, reply }) => {
+cmd({
+    pattern: "setprefix",
+    desc: "Change bot prefix for this session",
+    category: "owner",
+    react: "⚙️",
+    use: ".setprefix!",
+    filename: __filename
+},
+async(conn, mek, m, { args, isOwner, reply, botNumber }) => {
+    if (!isOwner) return reply("*❌ Owner only*");
 
-    if (!isOwner) return reply("❌ Owner only command!");
-
-    if (!text) {
-      return reply(
-        `*Current Prefix:* \`${global.prefix || '.'}\`\n\n` +
-        `*Usage:* ${global.prefix || '.'}setprefix <symbol>\n` +
-        `*Example:* ${global.prefix || '.'}setprefix!\n\n` +
-        `*Note:* Single character only. No letters/numbers.`
-      );
+    const newPrefix = args[0];
+    if (!newPrefix) {
+        const current = await getPrefix(botNumber);
+        return reply(`*Current prefix:* \`${current}\`\n*Usage:*.setprefix!`);
     }
 
-    if (text.length !== 1 || /[a-zA-Z0-9]/.test(text)) {
-      return reply("❌ Prefix must be 1 special character only.\n*Examples:* . ! # $ /");
-    }
+    if (newPrefix.length > 3) return reply("❌ Prefix too long. Max 3 characters");
 
-    const oldPrefix = global.prefix || '.';
-    const envPath = path.join(__dirname, '../../.env'); // adjust path if needed
-
-    try {
-      let envContent = "";
-      if (fs.existsSync(envPath)) {
-        envContent = fs.readFileSync(envPath, 'utf8');
-      }
-
-      // Update or add PREFIX line in .env
-      if (envContent.includes("PREFIX=")) {
-        envContent = envContent.replace(/PREFIX=.*/g, `PREFIX=${text}`);
-      } else {
-        envContent += `\nPREFIX=${text}\n`;
-      }
-
-      fs.writeFileSync(envPath, envContent);
-
-      // Reload config and update global.prefix immediately
-      delete require.cache[require.resolve('../../config')]; // adjust path
-      const config = require('../../config');
-      global.prefix = config.PREFIX;
-
-      await reply(
-        `✅ *Prefix Updated*\n\n` +
-        `*Old:* \`${oldPrefix}\`\n` +
-        `*New:* \`${text}\`\n\n` +
-        `All commands now use \`${text}\`\n` +
-        `*Example:* ${text}menu\n` +
-        `✅ Saved permanently. No restart needed.`
-      );
-
-    } catch (e) {
-      await reply(
-        `❌ Could not update prefix: ${e.message}\n` +
-        `Prefix will reset on restart.`
-      );
-    }
-  }
-}
+    await setPrefix(botNumber, newPrefix);
+    return reply(`*✅ Prefix changed to:* \`${newPrefix}\`\nNow use \`${newPrefix}menu\``);
+});

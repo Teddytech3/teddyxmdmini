@@ -1,70 +1,54 @@
-const config = require('../config');
+const { cmd } = require('../inconnuboy');
+const { setAntiLink, getAntiLink, addWhitelist, removeWhitelist } = require('../data/antlink');
 
-module.exports = {
-  name: "antilink",
-  alias: ["nolink", "antigrplink"],
-  desc: "Auto delete links in group. Admin only toggle.",
-  category: "group",
-  react: "🚫",
-  start: async (conn, mek, m, { isGroup, isAdmin, isBotAdmin, reply, text }) => {
+const linkRegex = /(https?:\/\/[^\s]+)|(wa\.me\/[^\s]+)|(chat\.whatsapp\.com\/[^\s]+)/gi;
+const warnCount = new Map(); // key: userId:chatId:sender
 
-    if (!isGroup) return reply("❌ Group only command");
+cmd({
+    pattern: "antilink",
+    desc: "Manage antilink",
+    category: "group",
+    react: "🔗",
+    use: ".antilink on/off delete/kick/warn | addwl domain | delwl domain",
+    filename: __filename
+},
+async(conn, mek, m, { args, isOwner, reply, from, botNumber, isGroup, isAdmin }) => {
+    if (!isGroup) return reply("❌ Group only");
     if (!isAdmin) return reply("❌ Admin only");
 
-    // Toggle command
-    if (text === 'on' || text === 'off') {
-      global.antilink = global.antilink || {};
-      global.antilink[m.from] = text === 'on';
-      return reply(`✅ Antilink ${text === 'on'? 'enabled' : 'disabled'} for this group`);
+    const sub = args[0]?.toLowerCase();
+
+    if (sub === 'on') {
+        const action = args[1]?.toLowerCase() || 'delete';
+        await setAntiLink(botNumber, from, true, action);
+        return reply(`*✅ Antilink ON*\nAction: ${action}`);
+    }
+    if (sub === 'off') {
+        await setAntiLink(botNumber, from, false);
+        return reply("*❌ Antilink OFF*");
+    }
+    if (sub === 'addwl') {
+        const domain = args[1];
+        if (!domain) return reply("Usage:.antilink addwl youtube.com");
+        await addWhitelist(botNumber, from, domain);
+        return reply(`✅ Added *${domain}* to whitelist`);
+    }
+    if (sub === 'delwl') {
+        const domain = args[1];
+        if (!domain) return reply("Usage:.antilink delwl youtube.com");
+        await removeWhitelist(botNumber, from, domain);
+        return reply(`✅ Removed *${domain}* from whitelist`);
+    }
+    if (sub === 'limit') {
+        const limit = parseInt(args[1]);
+        if (isNaN(limit)) return reply("Usage:.antilink limit 3");
+        await setAntiLink(botNumber, from, true, 'warn', limit);
+        return reply(`✅ Warn limit set to ${limit}`);
     }
 
-    return reply(`*Antilink Status:* ${global.antilink?.[m.from]? 'ON' : 'OFF'}\n\n*Usage:*\n.antilink on - Enable\n.antilink off - Disable`);
-  },
+    const data = await getAntiLink(botNumber, from);
+    return reply(`*🔗 ANTI-LINK*\nStatus: ${data.status? 'ON ✅' : 'OFF ❌'}\nAction: ${data.action}\nWarn Limit: ${data.warnLimit}\nWhitelist: ${data.whitelist.join(', ') || 'None'}`);
+});
 
-  // This runs on every message
-  all: async (conn, mek, m, { isGroup, isBotAdmin, isAdmin }) => {
-    if (!isGroup ||!isBotAdmin) return;
-
-    // Check if enabled for this group
-    if (!global.antilink?.[m.from]) return;
-
-    // Skip admins and owner
-    if (isAdmin) return;
-    if (m.fromMe) return;
-
-    const body = m.body ||
-                 m.message?.conversation ||
-                 m.message?.extendedTextMessage?.text ||
-                 m.message?.imageMessage?.caption ||
-                 m.message?.videoMessage?.caption || '';
-
-    // WhatsApp links, Telegram links, URLs
-    const linkRegex = /(chat\.whatsapp\.com|t\.me|telegram\.me|wa\.me|https?:\/\/|www\.|bit\.ly|tinyurl|discord\.gg)/i;
-
-    if (linkRegex.test(body)) {
-      try {
-        // Delete the message
-        await conn.sendMessage(m.from, { delete: mek.key });
-
-        // Warn user
-        await conn.sendMessage(m.from, {
-          text: `⚠️ @${m.sender.split('@')[0]} Links are not allowed here!`,
-          mentions: [m.sender]
-        }, { quoted: mek });
-
-        // Optional: Kick after 3 warnings - uncomment to enable
-        // global.linkWarnings = global.linkWarnings || {};
-        // global.linkWarnings[m.sender] = (global.linkWarnings[m.sender] || 0) + 1;
-        // if (global.linkWarnings[m.sender] >= 3) {
-        // await conn.groupParticipantsUpdate(m.from, [m.sender], 'remove');
-        // delete global.linkWarnings[m.sender];
-        // }
-
-        console.log(`[ANTILINK] Deleted link from ${m.pushName} in ${m.from}`);
-
-      } catch (e) {
-        console.log('Antilink error:', e.message);
-      }
-    }
-  }
-}
+module.exports.linkRegex = linkRegex;
+module.exports.warnCount = warnCount;
