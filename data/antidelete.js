@@ -1,16 +1,21 @@
 const mongoose = require('mongoose');
 
+// delete cached model if it exists to prevent strict mode errors
+if (mongoose.models.AntiDel) {
+    delete mongoose.models.AntiDel;
+}
+
 // ─── Mongoose Schema ─────────────────────────────────────────────────────────
 const antiDelSchema = new mongoose.Schema({
     userId: { type: String, required: true }, // connected bot number
     chatId: { type: String, required: true }, // 'gc', 'dm', or specific chat jid
     type: { type: String, enum: ['gc', 'dm', 'chat'], default: 'chat' },
     status: { type: Boolean, default: false },
-}, { strict: false }); // <-- added to prevent "Path not in schema" errors
+}, { strict: false });
 
 antiDelSchema.index({ userId: 1, chatId: 1 }, { unique: true });
 
-const AntiDelDB = mongoose.models.AntiDel || mongoose.model('AntiDel', antiDelSchema);
+const AntiDelDB = mongoose.model('AntiDel', antiDelSchema);
 
 // ─── In-memory fallback ──────────────────────
 const memoryCache = new Map(); // key: userId:chatId
