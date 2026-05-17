@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
 // delete cached model if it exists
-if (mongoose.models.AntiDel) {
-    delete mongoose.models.AntiDel;
+if (mongoose.models.AntiDelV2) {
+    delete mongoose.models.AntiDelV2;
 }
 
 // ─── Mongoose Schema ─────────────────────────────────────────────────────────
@@ -11,10 +11,13 @@ const antiDelSchema = new mongoose.Schema({
     chatId: { type: String, required: true },
     type: { type: String, enum: ['gc', 'dm', 'chat'], default: 'chat' },
     status: { type: Boolean, default: false },
-}, { strict: false });
+}, {
+    strict: false,
+    collection: 'antidels_v2' // <-- use a new collection name
+});
 
-// removed the index line to avoid E11000 errors with old indexes
-const AntiDelDB = mongoose.model('AntiDel', antiDelSchema);
+// no index defined here to avoid conflicts
+const AntiDelDB = mongoose.model('AntiDelV2', antiDelSchema);
 
 // ─── In-memory fallback ──────────────────────
 const memoryCache = new Map();
@@ -91,8 +94,8 @@ const getAllAntiDeleteSettings = async (userId) => {
             return await AntiDelDB.find({ userId });
         }
         return [...memoryCache.entries()]
-        .filter(([k]) => k.startsWith(userId + ':'))
-        .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
+       .filter(([k]) => k.startsWith(userId + ':'))
+       .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
     } catch (e) {
         return [];
     }
