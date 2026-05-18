@@ -5,7 +5,6 @@ if (mongoose.models.AntiDelV2) {
     delete mongoose.models.AntiDelV2;
 }
 
-// ─── Mongoose Schema ─────────────────────────────────────────────────────────
 const antiDelSchema = new mongoose.Schema({
     userId: { type: String, required: true },
     chatId: { type: String, required: true },
@@ -13,24 +12,22 @@ const antiDelSchema = new mongoose.Schema({
     status: { type: Boolean, default: false },
 }, {
     strict: false,
-    collection: 'antidels_v2' // <-- use a new collection name
+    collection: 'antidels_v2'
 });
 
-// no index defined here to avoid conflicts
 const AntiDelDB = mongoose.model('AntiDelV2', antiDelSchema);
 
-// ─── In-memory fallback ──────────────────────
 const memoryCache = new Map();
 
 const isMongoReady = () => mongoose.connection.readyState === 1;
 const makeKey = (userId, chatId) => `${userId}:${chatId}`;
 
-/**
- * Initialize default anti-delete settings for a user
- */
 const initializeAntiDeleteSettings = async (userId) => {
     try {
-        if (!isMongoReady()) return;
+        if (!isMongoReady()) {
+            console.log('Mongo not ready, skipping init');
+            return;
+        }
         for (const type of ['gc', 'dm']) {
             await AntiDelDB.findOneAndUpdate(
                 { userId, chatId: type },
@@ -39,19 +36,19 @@ const initializeAntiDeleteSettings = async (userId) => {
             );
         }
     } catch (e) {
-        console.error('initializeAntiDeleteSettings error:', e.message);
+        console.error('initializeAntiDeleteSettings error:', e);
     }
 };
 
-/**
- * Set anti-delete status for user + chat
- */
 const setAnti = async (userId, chatId, status) => {
     try {
         const key = makeKey(userId, chatId);
         memoryCache.set(key, status);
 
-        if (!isMongoReady()) return true;
+        if (!isMongoReady()) {
+            console.log('Mongo not ready, saved to memory only');
+            return true;
+        }
 
         await AntiDelDB.findOneAndUpdate(
             { userId, chatId },
@@ -60,43 +57,37 @@ const setAnti = async (userId, chatId, status) => {
         );
         return true;
     } catch (e) {
-        console.error('setAnti error:', e.message);
+        console.error('setAnti error:', e);
         return false;
     }
 };
 
-/**
- * Get anti-delete status for user + chat
- */
 const getAnti = async (userId, chatId) => {
     try {
         const key = makeKey(userId, chatId);
-
         if (isMongoReady()) {
             const doc = await AntiDelDB.findOne({ userId, chatId });
             const status = doc? doc.status : false;
             memoryCache.set(key, status);
             return status;
         }
-
         return memoryCache.get(key) || false;
     } catch (e) {
+        console.error('getAnti error:', e);
         return memoryCache.get(makeKey(userId, chatId)) || false;
     }
 };
 
-/**
- * Get all anti-delete settings for a user
- */
 const getAllAntiDeleteSettings = async (userId) => {
     try {
         if (isMongoReady()) {
             return await AntiDelDB.find({ userId });
         }
         return [...memoryCache.entries()]
-       .filter(([k]) => k.startsWith(userId + ':'))
-       .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
+      .filter(([k]) => k.startsWith(userId + ':'))
+      .map(([k, status]) => ({ chatId: k.split(':')[1], status }));
     } catch (e) {
+        console.error('getAllAntiDeleteSettings error:', e);
         return [];
     }
 };
