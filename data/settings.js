@@ -1,66 +1,58 @@
 const mongoose = require('mongoose');
 
+if (mongoose.models.SettingsV2) {
+    delete mongoose.models.SettingsV2;
+}
+
 const settingsSchema = new mongoose.Schema({
     userId: { type: String, required: true, unique: true },
     prefix: { type: String, default: '.' },
-    workType: { type: String, default: 'public' }, // public, private, inbox, group
+    workType: { type: String, default: 'public' },
     autoReact: { type: Boolean, default: false },
     autoReactNumbers: { type: [String], default: [] },
-    autoReactEmojis: { type: [String], default: ['❤️','🔥','💯','👑','⚡'] },
+    autoReactEmojis: { type: [String], default: ['❤️', '👍'] },
     autoTyping: { type: Boolean, default: false },
     autoRecording: { type: Boolean, default: false },
-    channelReact: { type: Boolean, default: true },
-    channelReactEmojis: { type: [String], default: ['❤️','👍','🔥','💯','🙏'] },
     autoReadStatus: { type: Boolean, default: false },
     autoReactStatus: { type: Boolean, default: false },
-    updatedAt: { type: Date, default: Date.now }
+    channelReact: { type: Boolean, default: false },
+    channelReactEmojis: { type: [String], default: ['❤️'] },
+}, {
+    strict: false,
+    collection: 'settings_v2' // new collection
 });
 
-const SettingsDB = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
-const memoryCache = new Map();
+const SettingsDB = mongoose.model('SettingsV2', settingsSchema);
+
+const isMongoReady = () => mongoose.connection.readyState === 1;
 
 const getSettings = async (userId) => {
-    if (memoryCache.has(userId)) return memoryCache.get(userId);
-
-    if (mongoose.connection.readyState === 1) {
-        const doc = await SettingsDB.findOne({ userId });
-        if (doc) {
-            memoryCache.set(userId, doc.toObject());
-            return doc.toObject();
+    try {
+        if (!isMongoReady()) return {};
+        let doc = await SettingsDB.findOne({ userId });
+        if (!doc) {
+            doc = await SettingsDB.create({ userId });
         }
+        return doc.toObject();
+    } catch (e) {
+        console.error('getSettings error:', e);
+        return {};
     }
-
-    const defaults = {
-        prefix: '.',
-        workType: 'public',
-        autoReact: false,
-        autoReactNumbers: [],
-        autoReactEmojis: ['❤️','🔥','💯','👑','⚡'],
-        autoTyping: false,
-        autoRecording: false,
-        channelReact: true,
-        channelReactEmojis: ['❤️','👍','🔥','💯','🙏'],
-        autoReadStatus: false,
-        autoReactStatus: false
-    };
-    memoryCache.set(userId, defaults);
-    return defaults;
 };
 
 const updateSetting = async (userId, key, value) => {
-    const current = await getSettings(userId);
-    current[key] = value;
-    current.updatedAt = new Date();
-    memoryCache.set(userId, current);
-
-    if (mongoose.connection.readyState === 1) {
+    try {
+        if (!isMongoReady()) return false;
         await SettingsDB.findOneAndUpdate(
             { userId },
-            { $set: current },
+            { $set: { [key]: value } },
             { upsert: true, new: true }
         );
+        return true;
+    } catch (e) {
+        console.error('updateSetting error:', e);
+        return false;
     }
-    return current;
 };
 
 module.exports = { getSettings, updateSetting };
