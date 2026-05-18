@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// Clear cached model to avoid old collection issues
+// Clear cached model
 if (mongoose.models.SettingsV2) {
     delete mongoose.models.SettingsV2;
 }
@@ -14,18 +14,38 @@ const settingsSchema = new mongoose.Schema({
     autoReactEmojis: { type: [String], default: ['❤️', '👍'] },
     autoTyping: { type: Boolean, default: false },
     autoRecording: { type: Boolean, default: false },
-    autoReadStatus: { type: Boolean, default: false },
-    autoReactStatus: { type: Boolean, default: false },
-    channelReact: { type: Boolean, default: false },
+    autoReadStatus: { type: Boolean, default: true },
+    autoReactStatus: { type: Boolean, default: true },
+    channelReact: { type: Boolean, default: true },
     channelReactEmojis: { type: [String], default: ['❤️'] },
 }, {
     strict: false,
-    collection: 'settings_v2' // new collection to avoid old index conflicts
+    collection: 'settings_v2',
+    autoIndex: true
 });
 
 const SettingsDB = mongoose.model('SettingsV2', settingsSchema);
 
 const isMongoReady = () => mongoose.connection.readyState === 1;
+
+// Auto-fix duplicate index on startup
+const fixIndexes = async () => {
+    try {
+        const indexes = await SettingsDB.collection.indexes();
+        const hasOldIndex = indexes.some(idx => idx.name === 'userId_1' && idx.unique === true);
+
+        if (hasOldIndex) {
+            await SettingsDB.collection.dropIndex('userId_1');
+            console.log('✅ Dropped old userId_1 index');
+        }
+    } catch (e) {
+        if (e.code!== 27) { // 27 = index not found, ignore it
+            console.error('Index fix error:', e.message);
+        }
+    }
+};
+
+mongoose.connection.once('connected', fixIndexes);
 
 const getSettings = async (userId) => {
     try {
@@ -40,7 +60,6 @@ const getSettings = async (userId) => {
         return doc.toObject();
     } catch (e) {
         console.error('getSettings error:', e.message);
-        console.error('Full error:', e);
         return {};
     }
 };
@@ -64,7 +83,6 @@ const updateSetting = async (userId, key, value) => {
         return true;
     } catch (e) {
         console.error('updateSetting error:', e.message);
-        console.error('Full error:', e); // shows code, keyPattern, etc
         return false;
     }
 };
