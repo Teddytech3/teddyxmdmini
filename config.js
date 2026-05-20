@@ -28,8 +28,8 @@ module.exports = {
     AUTO_TYPING: process.env.AUTO_TYPING || 'false',
     AUTO_RECORDING: process.env.AUTO_RECORDING || 'false',
 
-    WELCOME_ENABLE: process.env.WELCOME_ENABLE || 'true',
-    GOODBYE_ENABLE: process.env.GOODBYE_ENABLE || 'true',
+    WELCOME_ENABLE: process.env.WELCOME_ENABLE || 'false',
+    GOODBYE_ENABLE: process.env.GOODBYE_ENABLE || 'false',
     WELCOME_MSG: process.env.WELCOME_MSG || null,
     GOODBYE_MSG: process.env.GOODBYE_MSG || null,
     WELCOME_IMAGE: process.env.WELCOME_IMAGE || null,
