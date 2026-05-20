@@ -40,6 +40,9 @@ module.exports = {
     ANTI_CALL: process.env.ANTI_CALL || 'true',
     REJECT_MSG: process.env.REJECT_MSG || '*📵 TEDDY-XMD doesn\'t accept calls*',
     ANTI_DELETE: process.env.ANTI_DELETE || 'true',
+    
+    // Added for anti-delete routing: 'log' = bot PM, 'gc' = group, 'dm' = sender
+    ANTI_DEL_PATH: process.env.ANTI_DEL_PATH || 'log',
 
     IMAGE_PATH: 'https://files.catbox.moe/13nyhx.jpg',
     CHANNEL_LINK: 'https://whatsapp.com/channel/0029VbBXuGe4yltMLngL582d',

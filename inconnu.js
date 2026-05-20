@@ -52,8 +52,8 @@ global.cmd = (info, func) => {
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-  .filter(f => f.endsWith('.js'))
-  .forEach(f => {
+.filter(f => f.endsWith('.js'))
+.forEach(f => {
         try {
             require(path.join(pluginsDir, f));
             console.log(`✅ Loaded plugin: ${f}`);
@@ -146,16 +146,6 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
             return patterns.includes(cmdName);
         });
 
-        if (!command) {
-            return reply(`❌ Unknown command. Type *${prefix}help* to see available commands.`);
-        }
-
-        if (command.react) {
-            conn.sendMessage(from, { react: { text: command.react, key: mek.key } }).catch(() => {});
-        }
-
-        await incrementStats(botNumber, 'commandsUsed').catch(() => {});
-
         const reply = async (text) => {
             if (autoRecord &&!fromMe) {
                 await conn.sendPresenceUpdate('recording', from).catch(() => {});
@@ -173,6 +163,16 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
 
             return sent;
         };
+
+        if (!command) {
+            return reply(`❌ Unknown command. Type *${prefix}help* to see available commands.`);
+        }
+
+        if (command.react) {
+            conn.sendMessage(from, { react: { text: command.react, key: mek.key } }).catch(() => {});
+        }
+
+        await incrementStats(botNumber, 'commandsUsed').catch(() => {});
 
         await command.function(conn, mek, mek, {
             from, sender, isOwner, isSudo: isSudoUser, args, q, reply, prefix,
@@ -267,7 +267,6 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('creds.update', async () => {
             await saveCreds();
-            // Remove duplicate manual save - saveCreds already handles it
         });
 
         conn.ev.on('connection.update', async (update) => {
@@ -431,7 +430,7 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('messages.update', async (updates) => {
             try {
-                await AntiDelete(conn, updates);
+                await AntiDelete(conn, updates, sanitizedNumber);
             } catch (e) {
                 console.error('messages.update AntiDelete error:', e.message);
             }
