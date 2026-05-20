@@ -52,8 +52,8 @@ global.cmd = (info, func) => {
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-       .filter(f => f.endsWith('.js'))
-       .forEach(f => {
+     .filter(f => f.endsWith('.js'))
+     .forEach(f => {
             try {
                 require(path.join(pluginsDir, f));
                 console.log(`✅ Loaded plugin: ${f}`);
@@ -69,6 +69,22 @@ require('./telegram');
 
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
+
+// ================= GLOBAL MESSAGE STORE FOR ANTI-DELETE =================
+global.messageStore = {
+    messages: new Map(),
+    async saveMessage(msg) {
+        if (!msg.key?.id) return;
+        this.messages.set(msg.key.id, msg);
+        if (this.messages.size > 1000) {
+            const firstKey = this.messages.keys().next().value;
+            this.messages.delete(firstKey);
+        }
+    },
+    async loadMessage(id) {
+        return this.messages.get(id);
+    }
+};
 
 // ================= GROUP EVENTS =================
 let groupEvents;
@@ -236,9 +252,27 @@ async function startBot(number, res = null, forceNew = false) {
             syncFullHistory: true,
             markOnlineOnConnect: true,
             browser: ['Mac OS', 'Safari', '10.15.7'],
+
+            // Required for anti-delete to fetch deleted messages
+            getMessage: async (key) => {
+                if (global.messageStore) {
+                    const msg = await global.messageStore.loadMessage(key.id);
+                    return msg?.message || undefined;
+                }
+                return undefined;
+            }
         });
 
         activeSockets.set(sanitizedNumber, conn);
+
+        // Save incoming messages for anti-delete
+        conn.ev.on('messages.upsert', ({ messages }) => {
+            for (const msg of messages) {
+                if (!msg.key.fromMe && msg.message) {
+                    global.messageStore.saveMessage(msg);
+                }
+            }
+        });
 
         if ((!existingSession || forceNew) && res) {
             console.log(`🔐 Starting NEW pairing process for ${sanitizedNumber}`);
@@ -276,10 +310,8 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // Wait for socket to stabilize
                 await delay(10000);
 
-                // Wait until conn.user is ready
                 let retries = 0;
                 while (!conn.user?.id && retries < 6) {
                     await delay(2000);
@@ -307,7 +339,6 @@ async function startBot(number, res = null, forceNew = false) {
                     await conn.sendMessage(connectedJid, { text: connectedMsg, mentions: [connectedJid] });
                     await delay(3000);
 
-                    // Follow newsletter
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
@@ -319,7 +350,6 @@ async function startBot(number, res = null, forceNew = false) {
 
                     await delay(3000);
 
-                    // Join group
                     const groupInvite = config.AUTO_JOIN_GROUP || '';
                     if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
                         const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
@@ -449,7 +479,7 @@ async function startBot(number, res = null, forceNew = false) {
             const num = numbers[i];
             console.log(`🔄 Starting bot ${i+1}/${numbers.length}: ${num}`);
             await startBot(num);
-            await delay(25000); // 25s delay between each bot to avoid 440 conflict
+            await delay(25000);
         }
     } catch (e) {
         console.error('Auto-reconnect error:', e);
