@@ -18,28 +18,21 @@ async (conn, mek, m, { from, sender, reply }) => {
             return reply("❌ Reply to a *view-once image or video*.");
         }
 
-        // Handle view-once wrapper (Baileys v6+)
-        const viewOnceMsg =
-            quoted.viewOnceMessageV2 ||
-            quoted.viewOnceMessage ||
-            null;
+        // Handle view-once wrapper
+        const viewOnceMsg = quoted.viewOnceMessageV2 || quoted.viewOnceMessage || null;
 
-        const mediaMessage =
-            viewOnceMsg?.message?.imageMessage ||
-            viewOnceMsg?.message?.videoMessage ||
-            quoted.imageMessage ||
-            quoted.videoMessage;
+        if (!viewOnceMsg) {
+            return reply("❌ This is not a view-once message.");
+        }
+
+        const mediaMessage = viewOnceMsg.message?.imageMessage || viewOnceMsg.message?.videoMessage;
 
         if (!mediaMessage) {
-            return reply("❌ Unsupported message type.");
+            return reply("❌ Unsupported message type. Only image/video view-once supported.");
         }
 
-        const isImage = !!mediaMessage.imageMessage || mediaMessage.mimetype?.startsWith("image");
-        const isVideo = !!mediaMessage.videoMessage || mediaMessage.mimetype?.startsWith("video");
-
-        if (!mediaMessage.viewOnce) {
-            return reply("❌ This is not a view-once media.");
-        }
+        const isImage =!!mediaMessage.imageMessage || mediaMessage.mimetype?.startsWith("image");
+        const isVideo =!!mediaMessage.videoMessage || mediaMessage.mimetype?.startsWith("video");
 
         // Ping-style reaction
         const reactionEmojis = ['🔥','⚡','🚀','💨','🎯','🎉','🌟','💥','👁️'];
@@ -47,12 +40,12 @@ async (conn, mek, m, { from, sender, reply }) => {
 
         await conn.sendMessage(from, {
             react: { text: reactEmoji, key: mek.key }
-        });
+        }).catch(() => {});
 
         // Download media
         const stream = await downloadContentFromMessage(
             mediaMessage,
-            isImage ? "image" : "video"
+            isImage? "image" : "video"
         );
 
         let buffer = Buffer.from([]);
@@ -60,9 +53,9 @@ async (conn, mek, m, { from, sender, reply }) => {
             buffer = Buffer.concat([buffer, chunk]);
         }
 
-        // Send revealed media (NOT view-once)
+        // Send revealed media - NOT view-once
         await conn.sendMessage(from, {
-            [isImage ? "image" : "video"]: buffer,
+            [isImage? "image" : "video"]: buffer,
             caption: mediaMessage.caption || '',
             contextInfo: {
                 mentionedJid: [sender],
@@ -78,6 +71,6 @@ async (conn, mek, m, { from, sender, reply }) => {
 
     } catch (err) {
         console.error("VV Command Error:", err);
-        reply("❌ Failed to reveal view-once media.");
+        reply("❌ Failed to reveal view-once media. It might have expired.");
     }
 });

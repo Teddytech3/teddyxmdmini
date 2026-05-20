@@ -9,46 +9,59 @@ cmd({
     react: "👁️",
     filename: __filename
 },
-async (conn, mek, m, { from, isOwner, reply, sender, quoted }) => {
+async (conn, mek, m, { from, reply, sender }) => {
     try {
+        const quoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        
         if (!quoted) return reply("*❌ Reply to a view once message with vv2*");
         
-        // Check if quoted message is view once
-        const isViewOnce = quoted.viewOnce || quoted.msg?.viewOnce || quoted.message?.viewOnceMessage;
-        
-        if (!isViewOnce) {
+        // Get the actual view-once wrapper
+        const viewOnceMsg = quoted.viewOnceMessageV2 || quoted.viewOnceMessage;
+        if (!viewOnceMsg) {
             return reply("*❌ That's not a view once message*\n\n*⚡ TEDDY-XMD*");
+        }
+
+        const mediaMessage = viewOnceMsg.message?.imageMessage || 
+                            viewOnceMsg.message?.videoMessage || 
+                            viewOnceMsg.message?.audioMessage;
+
+        if (!mediaMessage) {
+            return reply("*❌ Unsupported view once type*\n\n*⚡ TEDDY-XMD*");
         }
 
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-        // Download the view once media
-        const buffer = await downloadMediaMessage(quoted, 'buffer', {}, {});
+        // Download using the inner media object
+        const buffer = await downloadMediaMessage(
+            { message: mediaMessage },
+            'buffer',
+            {},
+            { logger: conn.logger }
+        );
         
-        const mime = quoted.mimetype || quoted.msg?.mimetype || '';
-        const caption = quoted.caption || quoted.msg?.caption || '';
+        const mime = mediaMessage.mimetype || '';
+        const caption = mediaMessage.caption || '';
         
-        // Get sender's inbox
         const ownerJid = sender;
 
-        if (/image/.test(mime)) {
+        if (mime.startsWith('image/')) {
             await conn.sendMessage(ownerJid, {
                 image: buffer,
-                caption: caption? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
+                caption: caption ? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` 
+                                : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
             });
-        } else if (/video/.test(mime)) {
+        } else if (mime.startsWith('video/')) {
             await conn.sendMessage(ownerJid, {
                 video: buffer,
-                caption: caption? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
+                caption: caption ? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` 
+                                : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
             });
-        } else if (/audio/.test(mime)) {
+        } else if (mime.startsWith('audio/')) {
             await conn.sendMessage(ownerJid, {
                 audio: buffer,
                 mimetype: 'audio/mp4',
-                ptt: quoted.msg?.ptt || false
+                ptt: mediaMessage.ptt || false
             });
-        } else {
-            return reply("*❌ Unsupported view once type*\n\n*⚡ TEDDY-XMD*");
         }
 
         await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
@@ -65,36 +78,51 @@ async (conn, mek, m, { from, isOwner, reply, sender, quoted }) => {
 cmd({
     on: "text",
     filename: __filename
-}, async (conn, mek, m, { from, body, sender, quoted, reply }) => {
+}, async (conn, mek, m, { from, body, sender, reply }) => {
     try {
         if (body?.toLowerCase().trim() !== 'vv2') return;
+        
+        const quoted = mek.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         if (!quoted) return;
 
-        const isViewOnce = quoted.viewOnce || quoted.msg?.viewOnce || quoted.message?.viewOnceMessage;
-        if (!isViewOnce) return;
+        const viewOnceMsg = quoted.viewOnceMessageV2 || quoted.viewOnceMessage;
+        if (!viewOnceMsg) return;
+
+        const mediaMessage = viewOnceMsg.message?.imageMessage || 
+                            viewOnceMsg.message?.videoMessage || 
+                            viewOnceMsg.message?.audioMessage;
+        if (!mediaMessage) return;
 
         await conn.sendMessage(from, { react: { text: "⏳", key: mek.key } });
 
-        const buffer = await downloadMediaMessage(quoted, 'buffer', {}, {});
-        const mime = quoted.mimetype || quoted.msg?.mimetype || '';
-        const caption = quoted.caption || quoted.msg?.caption || '';
+        const buffer = await downloadMediaMessage(
+            { message: mediaMessage },
+            'buffer',
+            {},
+            { logger: conn.logger }
+        );
+
+        const mime = mediaMessage.mimetype || '';
+        const caption = mediaMessage.caption || '';
         const ownerJid = sender;
 
-        if (/image/.test(mime)) {
+        if (mime.startsWith('image/')) {
             await conn.sendMessage(ownerJid, {
                 image: buffer,
-                caption: caption? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
+                caption: caption ? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` 
+                                : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
             });
-        } else if (/video/.test(mime)) {
+        } else if (mime.startsWith('video/')) {
             await conn.sendMessage(ownerJid, {
                 video: buffer,
-                caption: caption? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
+                caption: caption ? `${caption}\n\n*👁️ View Once Recovered*\n*⚡ TEDDY-XMD*` 
+                                : `*👁️ View Once Recovered*\n\n*⚡ TEDDY-XMD*`
             });
-        } else if (/audio/.test(mime)) {
+        } else if (mime.startsWith('audio/')) {
             await conn.sendMessage(ownerJid, {
                 audio: buffer,
                 mimetype: 'audio/mp4',
-                ptt: quoted.msg?.ptt || false
+                ptt: mediaMessage.ptt || false
             });
         }
 
