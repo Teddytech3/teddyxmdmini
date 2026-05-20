@@ -26,8 +26,6 @@ cmd({
     }, { quoted: mek });
 
     const speed = Date.now() - start;
-
-    // Readmore trick - hides everything after this under...more
     const readmore = String.fromCharCode(8206).repeat(2000);
 
     const menuMsg = `┏━━❐✧ ${config.BOT_NAME || 'TEDDY-XMD'} ✧❐
@@ -148,8 +146,18 @@ _⚡ Powered by ${config.BOT_NAME || 'TEDDY-XMD'}_`;
     await conn.sendMessage(from, { delete: loadingMsg.key });
 
     await conn.sendMessage(from, {
-        text: menuMsg,
-        mentions: [sender]
+        image: { url: 'https://files.catbox.moe/13nyhx.jpg' },
+        caption: menuMsg,
+        mentions: [sender],
+        contextInfo: {
+            forwardingScore: 999,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: '120363421104812135@newsletter',
+                serverMessageId: 1,
+                newsletterName: config.NEWSLETTER_NAME || 'TEDDY-XMD Updates'
+            }
+        }
     }, { quoted: mek });
 
   } catch (err) {
