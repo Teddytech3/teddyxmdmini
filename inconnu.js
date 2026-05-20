@@ -52,8 +52,8 @@ global.cmd = (info, func) => {
 const pluginsDir = path.join(__dirname, 'plugins');
 if (fs.existsSync(pluginsDir)) {
     fs.readdirSync(pluginsDir)
-   .filter(f => f.endsWith('.js'))
-   .forEach(f => {
+  .filter(f => f.endsWith('.js'))
+  .forEach(f => {
         try {
             require(path.join(pluginsDir, f));
             console.log(`✅ Loaded plugin: ${f}`);
@@ -267,10 +267,7 @@ async function startBot(number, res = null, forceNew = false) {
 
         conn.ev.on('creds.update', async () => {
             await saveCreds();
-            try {
-                const creds = JSON.parse(fs.readFileSync(path.join(sessionDir, 'creds.json'), 'utf-8'));
-                await saveSessionToMongoDB(sanitizedNumber, creds);
-            } catch (_) {}
+            // Remove duplicate manual save - saveCreds already handles it
         });
 
         conn.ev.on('connection.update', async (update) => {
@@ -280,22 +277,22 @@ async function startBot(number, res = null, forceNew = false) {
                 console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
                 await addNumberToMongoDB(sanitizedNumber);
 
-                // Wait for conn.user to be ready
-                let retries = 0;
-                while (!conn.user?.id && retries < 10) {
-                    await delay(2000);
-                    retries++;
+                // Wait 8s for socket to stabilize
+                await delay(8000);
+
+                if (!conn.user?.id) {
+                    console.log(chalk.red('❌ conn.user not ready, skipping startup tasks'));
+                    return;
                 }
 
-                if (conn.user?.id) {
-                    try {
-                        await delay(5000);
-                        const connectedJid = conn.user.id;
-                        const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
-                        const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
-                        const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toUpperCase();
+                try {
+                    // 1. Send connected message
+                    const connectedJid = conn.user.id;
+                    const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
+                    const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
+                    const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toUpperCase();
 
-                        const connectedMsg = `╭───「 *${config.BOT_NAME} ONLINE* 」
+                    const connectedMsg = `╭───「 *${config.BOT_NAME} ONLINE* 」
 │
 │ ✅ Status : Connected
 │ 📱 Number : ${sanitizedNumber}
@@ -310,42 +307,47 @@ async function startBot(number, res = null, forceNew = false) {
 ╰───────────────
 ✨ Powered by ${config.BOT_NAME}`;
 
-                        await conn.sendMessage(connectedJid, {
-                            text: connectedMsg,
-                            mentions: [connectedJid]
-                        });
-                        console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
-                    } catch (e) {
-                        console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
-                    }
-                }
+                    await conn.sendMessage(connectedJid, { text: connectedMsg, mentions: [connectedJid] });
+                    console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
 
-                // Auto follow newsletter and join group
-                try {
+                    await delay(3000);
+
+                    // 2. Follow newsletter
                     const newsletterId = config.NEWSLETTER_JID;
                     if (newsletterId && newsletterId.includes('@newsletter')) {
                         const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
-                        if (!meta ||!meta.viewer_metadata) {
+                        if (!meta?.viewer_metadata) {
                             await conn.newsletterFollow(newsletterId);
-                            console.log(`✅ Auto-followed newsletter: ${newsletterId}`);
+                            console.log(`✅ Auto-followed newsletter`);
                         }
                     }
 
+                    await delay(3000);
+
+                    // 3. Join group
                     const groupInvite = config.AUTO_JOIN_GROUP || '';
                     if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
                         const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
-                        await conn.groupAcceptInvite(inviteCode).catch(() => {});
+                        await conn.groupAcceptInvite(inviteCode).catch(e => {
+                            console.log('Group join error:', e.message);
+                        });
                     }
+
                 } catch (e) {
-                    console.log('❌ Auto join error:', e.message);
+                    console.log(chalk.yellow('⚠️ Startup tasks failed:'), e.message);
                 }
             }
 
             if (connection === 'close') {
                 const code = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = code!== DisconnectReason.loggedOut;
-                if (shouldReconnect) setTimeout(() => startBot(number), 5000);
-                else {
+                const reason = lastDisconnect?.error?.message || 'Unknown';
+                console.log(chalk.red(`❌ Connection closed for ${sanitizedNumber}: ${code} - ${reason}`));
+
+                // Don't reconnect on 428 or loggedOut
+                const shouldReconnect = code!== DisconnectReason.loggedOut && code!== 428;
+                if (shouldReconnect) {
+                    setTimeout(() => startBot(number), 15000);
+                } else {
                     activeSockets.delete(sanitizedNumber);
                     await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
                 }
@@ -446,9 +448,13 @@ async function startBot(number, res = null, forceNew = false) {
     await connectdb();
     try {
         const numbers = await getAllNumbersFromMongoDB();
-        for (const num of numbers) {
+        console.log(`🔄 Found ${numbers.length} sessions to reconnect`);
+
+        for (let i = 0; i < numbers.length; i++) {
+            const num = numbers[i];
+            console.log(`🔄 Starting bot ${i+1}/${numbers.length}: ${num}`);
             await startBot(num);
-            await delay(2000);
+            await delay(20000); // 20s delay between each bot
         }
     } catch (e) {
         console.error('Auto-reconnect error:', e);
