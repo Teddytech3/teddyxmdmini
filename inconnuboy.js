@@ -1,10 +1,13 @@
-var commands = [];
+// inconnuuboy.js
+// Uses global commands array so it persists across restarts
+
+if (!global.commands) global.commands = [];
 
 function cmd(info, func) {
     var data = info;
     data.function = func;
     
-    // Si pas de pattern, on utilise cmdname
+    // If no pattern, use cmdname
     if (!data.pattern && data.cmdname) data.pattern = data.cmdname;
     
     if (!data.alias) data.alias = [];
@@ -13,7 +16,7 @@ function cmd(info, func) {
     if (!data.fromMe) data.fromMe = false;
     if (!data.category) data.category = 'misc';
     
-    commands.push(data);
+    global.commands.push(data);
     return data;
 }
 
@@ -21,5 +24,7 @@ module.exports = {
     cmd,
     AddCommand: cmd,
     Function: cmd,
-    commands,
+    get commands() { 
+        return global.commands; 
+    }
 };

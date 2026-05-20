@@ -7,7 +7,6 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const config = require('./config');
-const { commands } = require('./inconnuboy');
 const { sms } = require('./lib/msg');
 const { saveMessage } = require('./data');
 const { AntiDelete } = require('./lib/antidel');
@@ -32,12 +31,38 @@ const chalk = require('chalk');
 
 const router = express.Router();
 
-process.on('unhandledRejection', (err) => {
-    console.log('⚠️ Unhandled Rejection:', err.message);
-});
-process.on('uncaughtException', (err) => {
-    console.log('⚠️ Uncaught Exception:', err.message);
-});
+// ================= GLOBAL COMMANDS ARRAY =================
+if (!global.commands) global.commands = [];
+global.cmd = (info, func) => {
+    var data = info;
+    data.function = func;
+
+    if (!data.pattern && data.cmdname) data.pattern = data.cmdname;
+    if (!data.alias) data.alias = [];
+    if (!data.dontAddCommandList) data.dontAddCommandList = false;
+    if (!data.desc) data.desc = '';
+    if (!data.fromMe) data.fromMe = false;
+    if (!data.category) data.category = 'misc';
+
+    global.commands.push(data);
+    return data;
+};
+
+// ================= LOAD PLUGINS FIRST =================
+const pluginsDir = path.join(__dirname, 'plugins');
+if (fs.existsSync(pluginsDir)) {
+    fs.readdirSync(pluginsDir)
+   .filter(f => f.endsWith('.js'))
+   .forEach(f => {
+        try {
+            require(path.join(pluginsDir, f));
+            console.log(`✅ Loaded plugin: ${f}`);
+        } catch (e) {
+            console.error(`⚠️ Failed to load plugin ${f}:`, e.message);
+        }
+    });
+}
+console.log(`📦 Total commands loaded: ${global.commands.length}`);
 
 connectdb();
 require('./telegram');
@@ -45,54 +70,18 @@ require('./telegram');
 const activeSockets = new Map();
 const reactedNewsletters = new Set();
 
-async function autoJoinAndFollow(conn) {
-    try {
-        if (config.NEWSLETTER_JID && config.NEWSLETTER_JID.includes('@newsletter')) {
-            const meta = await conn.newsletterMetadata('jid', config.NEWSLETTER_JID).catch(() => null);
-            if (!meta ||!meta.viewer_metadata) {
-                await conn.newsletterFollow(config.NEWSLETTER_JID);
-                console.log(`✅ Auto-followed newsletter: ${config.NEWSLETTER_JID}`);
-            } else {
-                console.log(`✅ Already following newsletter: ${meta.name}`);
-            }
-        }
-
-        const groupInvite = config.AUTO_JOIN_GROUP || '';
-        if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
-            const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
-            await conn.groupAcceptInvite(inviteCode).catch(e => {
-                console.log('Group join error:', e.message);
-            });
-        }
-    } catch (e) {
-        console.log('❌ Auto join/follow error:', e.message);
-    }
-}
-
-const pluginsDir = path.join(__dirname, 'plugins');
-if (fs.existsSync(pluginsDir)) {
-    fs.readdirSync(pluginsDir)
-.filter(f => f.endsWith('.js'))
-.forEach(f => {
-        try {
-            require(path.join(pluginsDir, f));
-        } catch (e) {
-            console.error(`⚠️ Failed to load plugin ${f}:`, e.message);
-        }
-    });
-}
-
+// ================= GROUP EVENTS =================
 let groupEvents;
 try {
     groupEvents = require('./lib/groupEvents').groupEvents;
 } catch (e) {
+    console.log('⚠️ groupEvents not loaded:', e.message);
     groupEvents = async () => {};
 }
 
+// ================= MESSAGE HANDLER =================
 async function handleMessage(conn, mek, botNumber, userConfig) {
     try {
-        if (!conn.user ||!conn.user.id) return;
-
         mek = sms(conn, mek);
         if (!mek.message) return;
         if (mek.key && mek.key.remoteJid === 'status@broadcast') return;
@@ -152,12 +141,14 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
         const args = cmdText.split(' ').slice(1);
         const q = args.join(' ');
 
-        const command = commands.find(c => {
+        const command = global.commands.find(c => {
             const patterns = [c.pattern,...(c.alias || [])].map(p => p?.toLowerCase());
             return patterns.includes(cmdName);
         });
 
-        if (!command) return;
+        if (!command) {
+            return reply(`❌ Unknown command. Type *${prefix}help* to see available commands.`);
+        }
 
         if (command.react) {
             conn.sendMessage(from, { react: { text: command.react, key: mek.key } }).catch(() => {});
@@ -198,6 +189,7 @@ async function handleMessage(conn, mek, botNumber, userConfig) {
     }
 }
 
+// ================= START BOT =================
 async function startBot(number, res = null, forceNew = false) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionDir = path.join(__dirname, 'session', `session_${sanitizedNumber}`);
@@ -243,41 +235,31 @@ async function startBot(number, res = null, forceNew = false) {
             generateHighQualityLinkPreview: true,
             syncFullHistory: true,
             markOnlineOnConnect: true,
-            browser: ['Ubuntu', 'Chrome', '20.0.04'],
+            browser: ['Mac OS', 'Safari', '10.15.7'],
         });
 
         activeSockets.set(sanitizedNumber, conn);
 
         if ((!existingSession || forceNew) && res) {
             console.log(`🔐 Starting NEW pairing process for ${sanitizedNumber}`);
-            let code = null;
-            let attempts = 0;
-            const maxAttempts = 3;
-
-            while (!code && attempts < maxAttempts) {
-                attempts++;
-                try {
-                    await delay(2000 * attempts);
-                    code = await conn.requestPairingCode(sanitizedNumber);
-                    console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
-
-                    if (!res.headersSent) res.json({
-                        code,
-                        status: 'new_pairing',
-                        message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
-                        expires: '2 minutes'
-                    });
-                } catch (e) {
-                    console.error(`❌ Pairing attempt ${attempts} failed:`, e.message);
-                    if (attempts === maxAttempts) {
-                        if (!res.headersSent) res.status(500).json({
-                            error: 'Failed to get pairing code',
-                            status: 'error',
-                            message: 'Cannot reach WhatsApp server. Try again in 1 min.'
-                        });
-                        return;
-                    }
-                }
+            await delay(1500);
+            try {
+                const code = await conn.requestPairingCode(sanitizedNumber);
+                console.log(`✅ PAIRING CODE for ${sanitizedNumber}: ${code}`);
+                if (!res.headersSent) res.json({
+                    code,
+                    status: 'new_pairing',
+                    message: 'Enter this code in WhatsApp > Linked Devices > Link with phone number',
+                    expires: '2 minutes'
+                });
+            } catch (e) {
+                console.error('❌ Pairing code error:', e.message);
+                if (!res.headersSent) res.status(500).json({
+                    error: 'Failed to get pairing code',
+                    status: 'error',
+                    message: e.message
+                });
+                throw e;
             }
         } else {
             console.log(`✅ Using existing session for ${sanitizedNumber}`);
@@ -292,155 +274,156 @@ async function startBot(number, res = null, forceNew = false) {
         });
 
         conn.ev.on('connection.update', async (update) => {
-            try {
-                const { connection, lastDisconnect } = update;
+            const { connection, lastDisconnect } = update;
 
-                if (connection === 'open') {
-                    console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
-                    await addNumberToMongoDB(sanitizedNumber);
+            if (connection === 'open') {
+                console.log(chalk.green(`✅ Connected: ${sanitizedNumber}`));
+                await addNumberToMongoDB(sanitizedNumber);
 
+                // Wait for conn.user to be ready
+                let retries = 0;
+                while (!conn.user?.id && retries < 10) {
+                    await delay(2000);
+                    retries++;
+                }
+
+                if (conn.user?.id) {
                     try {
-                        await delay(3000);
-                        if (!conn.user?.id) {
-                            console.log(chalk.red('❌ conn.user not ready yet'));
-                            return;
-                        }
-
+                        await delay(5000);
                         const connectedJid = conn.user.id;
                         const time = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' });
                         const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
                         const workType = (userConfig.WORK_TYPE || config.WORK_TYPE || 'public').toUpperCase();
 
-                        const connectedMsg = `
-╔════════╗
-║ 🤖 ${config.BOT_NAME} ONLINE ║
-╚════════╝
-
-╭─「 CONNECTION INFO 」
+                        const connectedMsg = `╭───「 *${config.BOT_NAME} ONLINE* 」
+│
 │ ✅ Status : Connected
 │ 📱 Number : ${sanitizedNumber}
 │ ⏰ Time : ${time}
 │ 🔖 Version: ${config.VERSION || '1.0.0'}
 │ ⚡ Mode : ${workType}
-╰────────────────────────
-
-╭─「 GET STARTED 」
-│ Type *${config.PREFIX || '.'}menu* to open menu
+│
+├───「 *GET STARTED* 」
+│ Type *${config.PREFIX || '.'}menu* for menu
 │ Type *${config.PREFIX || '.'}help* for commands
-╰────────────────────────
-
-> ${config.BOT_NAME} is now active and ready
-`.trim();
+│
+╰───────────────
+✨ Powered by ${config.BOT_NAME}`;
 
                         await conn.sendMessage(connectedJid, {
                             text: connectedMsg,
                             mentions: [connectedJid]
-                        }).catch(() => {});
+                        });
                         console.log(chalk.blue(`📨 Connected message sent to ${sanitizedNumber}`));
-
                     } catch (e) {
                         console.log(chalk.yellow('⚠️ Could not send connected message:'), e.message);
                     }
-
-                    await autoJoinAndFollow(conn).catch(() => {});
-                    setInterval(() => autoJoinAndFollow(conn).catch(() => {}), 10 * 60 * 1000);
                 }
 
-                if (connection === 'close') {
-                    const code = lastDisconnect?.error?.output?.statusCode;
-                    console.log(chalk.red(`❌ Connection closed for ${sanitizedNumber}, code: ${code}`));
-                    const shouldReconnect = code!== DisconnectReason.loggedOut;
-                    if (shouldReconnect) setTimeout(() => startBot(number), 5000);
-                    else {
-                        activeSockets.delete(sanitizedNumber);
-                        await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+                // Auto follow newsletter and join group
+                try {
+                    const newsletterId = config.NEWSLETTER_JID;
+                    if (newsletterId && newsletterId.includes('@newsletter')) {
+                        const meta = await conn.newsletterMetadata('jid', newsletterId).catch(() => null);
+                        if (!meta ||!meta.viewer_metadata) {
+                            await conn.newsletterFollow(newsletterId);
+                            console.log(`✅ Auto-followed newsletter: ${newsletterId}`);
+                        }
                     }
+
+                    const groupInvite = config.AUTO_JOIN_GROUP || '';
+                    if (groupInvite && groupInvite.includes('chat.whatsapp.com')) {
+                        const inviteCode = groupInvite.split('chat.whatsapp.com/')[1].split('?')[0];
+                        await conn.groupAcceptInvite(inviteCode).catch(() => {});
+                    }
+                } catch (e) {
+                    console.log('❌ Auto join error:', e.message);
                 }
-            } catch (e) {
-                console.log('⚠️ Connection update error:', e.message);
+            }
+
+            if (connection === 'close') {
+                const code = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = code!== DisconnectReason.loggedOut;
+                if (shouldReconnect) setTimeout(() => startBot(number), 5000);
+                else {
+                    activeSockets.delete(sanitizedNumber);
+                    await deleteSessionFromMongoDB(sanitizedNumber).catch(() => {});
+                }
             }
         });
 
         conn.ev.on('group-participants.update', async (update) => {
-            await groupEvents(conn, update).catch(() => {});
+            try {
+                await groupEvents(conn, update);
+            } catch (e) {
+                console.error('groupEvents error:', e.message);
+            }
         });
 
         conn.ev.on('messages.upsert', async ({ messages, type }) => {
-            try {
-                if (type!== 'notify') return;
-                if (!conn.user ||!conn.user.id) return;
+            if (type!== 'notify') return;
+            const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
 
-                const userConfig = await getUserConfigFromMongoDB(sanitizedNumber).catch(() => ({}));
+            for (const mek of messages) {
+                const from = mek.key.remoteJid;
 
-                for (const mek of messages) {
+                if (from === config.NEWSLETTER_JID) {
+                    const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
+                    if (channelReact) {
+                        try {
+                            const serverId = mek.message?.newsletterServerId || mek.key.id;
+                            const uniqueKey = `${from}_${serverId}`;
+                            if (reactedNewsletters.has(uniqueKey)) continue;
+                            reactedNewsletters.add(uniqueKey);
+                            setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
+
+                            const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
+                            const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
+
+                            const res = await conn.newsletterReactMessage(from, serverId, emoji);
+                            if (res) {
+                                console.log(chalk.green(`✅ Reacted to newsletter with ${emoji}`));
+                            }
+                        } catch (e) {
+                            console.log(chalk.red(`❌ Newsletter react failed:`), e.message);
+                        }
+                    }
+                    continue;
+                }
+
+                if (from === 'status@broadcast') {
                     try {
-                        const from = mek.key.remoteJid;
+                        const shouldRead = config.AUTO_READ_STATUS === 'true';
+                        const shouldReact = config.AUTO_REACT_STATUS === 'true';
+                        const statusParticipant = mek.key.participant || mek.key.remoteJid;
 
-                        if (from === config.NEWSLETTER_JID) {
-                            const channelReact = (userConfig.CHANNEL_REACT || config.CHANNEL_REACT || 'true') === 'true';
-                            if (channelReact) {
-                                try {
-                                    const serverId = mek.message?.newsletterServerId || mek.key.id;
-                                    const uniqueKey = `${from}_${serverId}`;
-                                    if (reactedNewsletters.has(uniqueKey)) continue;
-                                    reactedNewsletters.add(uniqueKey);
-                                    setTimeout(() => reactedNewsletters.delete(uniqueKey), 600000);
-
-                                    const channelEmojis = (userConfig.CHANNEL_REACT_EMOJIS || config.CHANNEL_REACT_EMOJIS || '❤️,👍,🔥,💯,🙏,😂,😮,😢,🎉').split(',');
-                                    const emoji = channelEmojis[Math.floor(Math.random() * channelEmojis.length)].trim();
-
-                                    const res = await conn.newsletterReactMessage(from, serverId, emoji).catch(() => {});
-
-                                    if (res) {
-                                        console.log(chalk.green(`✅ Reacted to newsletter ${from} with ${emoji} | serverId: ${serverId}`));
-                                    }
-
-                                } catch (e) {
-                                    console.log(chalk.red(`❌ Newsletter react failed:`), e.message);
+                        if (statusParticipant && statusParticipant!== 'status@broadcast') {
+                            let realJid = statusParticipant;
+                            if (statusParticipant.endsWith('@lid')) {
+                                const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
+                                if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
+                                else {
+                                    const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
+                                    if (resolved) realJid = resolved;
                                 }
                             }
-                            continue;
-                        }
-
-                        if (from === 'status@broadcast') {
-                            try {
-                                const shouldRead = config.AUTO_READ_STATUS === 'true';
-                                const shouldReact = config.AUTO_REACT_STATUS === 'true';
-                                const statusParticipant = mek.key.participant || mek.key.remoteJid;
-
-                                if (statusParticipant && statusParticipant!== 'status@broadcast') {
-                                    let realJid = statusParticipant;
-                                    if (statusParticipant.endsWith('@lid')) {
-                                        const rawPn = mek.key?.participantPn || mek.key?.senderPn || mek.participantPn;
-                                        if (rawPn) realJid = rawPn.includes('@')? rawPn : `${rawPn}@s.whatsapp.net`;
-                                        else {
-                                            const resolved = await conn.getJidFromLid(statusParticipant).catch(() => null);
-                                            if (resolved) realJid = resolved;
-                                        }
-                                    }
-                                    const resolvedKey = { remoteJid: 'status@broadcast', id: mek.key.id, participant: realJid };
-                                    if (shouldRead) await conn.readMessages([resolvedKey]).catch(() => {});
-                                    if (shouldReact) {
-                                        const mType = Object.keys(mek.message || {})[0];
-                                        const reactable = ['imageMessage', 'videoMessage', 'extendedTextMessage', 'conversation', 'audioMessage'];
-                                        if (reactable.includes(mType)) {
-                                            let emojis = ['🧩', '🌸', '💫', '🫀', '🧿', '🤖', '🥰', '🗿', '💙', '🌝', '🖤', '💚'];
-                                            const emoji = emojis[Math.floor(Math.random() * emojis.length)];
-                                            await conn.sendMessage(from, { react: { key: resolvedKey, text: emoji } }, { statusJidList: [realJid, conn.user.id.split(':')[0] + '@s.whatsapp.net'] }).catch(() => {});
-                                        }
-                                    }
+                            const resolvedKey = { remoteJid: 'status@broadcast', id: mek.key.id, participant: realJid };
+                            if (shouldRead) await conn.readMessages([resolvedKey]);
+                            if (shouldReact) {
+                                const mType = Object.keys(mek.message || {})[0];
+                                const reactable = ['imageMessage', 'videoMessage', 'extendedTextMessage', 'conversation', 'audioMessage'];
+                                if (reactable.includes(mType)) {
+                                    let emojis = ['🧩', '🌸', '💫', '🫀', '🧿', '🤖', '🥰', '🗿', '💙', '🌝', '🖤', '💚'];
+                                    const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+                                    await conn.sendMessage(from, { react: { key: resolvedKey, text: emoji } }, { statusJidList: [realJid, conn.user.id.split(':')[0] + '@s.whatsapp.net'] });
                                 }
-                            } catch (e) {}
-                            continue;
+                            }
                         }
-
-                        await handleMessage(conn, mek, sanitizedNumber, userConfig);
-                    } catch (e) {
-                        console.log('⚠️ Message handling error:', e.message);
-                    }
+                    } catch (e) {}
+                    continue;
                 }
-            } catch (e) {
-                console.log('⚠️ Messages upsert error:', e.message);
+
+                await handleMessage(conn, mek, sanitizedNumber, userConfig);
             }
         });
 
@@ -458,23 +441,21 @@ async function startBot(number, res = null, forceNew = false) {
     }
 }
 
+// ================= AUTO-RECONNECT =================
 (async () => {
     await connectdb();
     try {
         const numbers = await getAllNumbersFromMongoDB();
         for (const num of numbers) {
-            try {
-                await startBot(num);
-                await delay(2000);
-            } catch (e) {
-                console.error(`❌ Failed to start bot for ${num}:`, e.message);
-            }
+            await startBot(num);
+            await delay(2000);
         }
     } catch (e) {
         console.error('Auto-reconnect error:', e);
     }
 })();
 
+// ================= API ROUTES =================
 router.get('/code', async (req, res) => {
     const number = req.query.number;
     if (!number) return res.json({ error: 'Number required' });
@@ -484,14 +465,6 @@ router.get('/code', async (req, res) => {
 router.get('/status', (req, res) => {
     const sessions = [...activeSockets.keys()];
     res.json({ active: sessions.length, sessions });
-});
-
-router.get('/', (req, res) => {
-    res.send('TEDDY-XMD is running');
-});
-
-router.get('/health', (req, res) => {
-    res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
 module.exports.getActiveSockets = () => activeSockets;
